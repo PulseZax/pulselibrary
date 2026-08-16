@@ -1,5 +1,3 @@
---v0.131
-
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
 end
@@ -3484,23 +3482,212 @@ local Library = { } do
             end
         end)
 
+        Items.SearchResults = Library:Create("ScrollingFrame", {
+            Parent = Items.Content.Instance,
+            Name = "\0",
+            BackgroundTransparency = 1,
+            ScrollBarThickness = 0,
+            ScrollBarImageTransparency = 1,
+            Selectable = false,
+            Active = true,
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            CanvasSize = UDim2.fromOffset(0, 0),
+            Size = UDim2.new(1, 0, 1, 0),
+            Visible = false,
+            ZIndex = 3,
+            BorderSizePixel = 0
+        })
+
+        Library:Create("UIListLayout", {
+            Parent = Items.SearchResults.Instance,
+            FillDirection = Enum.FillDirection.Vertical,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 10)
+        })
+
+        Items.SearchEmpty = MakeText({
+            Parent = Items.Content.Instance,
+            Text = "",
+            TextSize = 15,
+            Pos = UDim2.fromOffset(0, 24),
+            Size = UDim2.new(1, 0, 0, 20),
+            Color = "DimText",
+            Align = Enum.TextXAlignment.Center,
+            Z = 9
+        })
+
+        Items.SearchEmpty.Instance.Visible = false
+
+        local Borrowed = { }
+        local ResultCards = { }
+
+        local function ReturnBorrowed()
+            for _, Data in Borrowed do
+                if Data.Frame and Data.Frame.Instance and Data.Section then
+                    Data.Frame.Instance.Parent = Data.Section.Items.Frame.Instance
+                end
+
+                Data.Borrowed = nil
+            end
+
+            table.clear(Borrowed)
+
+            for _, Card in ResultCards do
+                pcall(function() Card:Destroy() end)
+            end
+
+            table.clear(ResultCards)
+        end
+
+        local function BreadCrumb(Section)
+            local Sub = Section and Section.SubTab
+            local Tab = Sub and Sub.Tab
+
+            local Parts = { }
+
+            if Tab then table.insert(Parts, Tab.Name) end
+            if Sub then table.insert(Parts, Sub.Name) end
+            if Section then table.insert(Parts, Section.Name) end
+
+            return table.concat(Parts, "  >  ")
+        end
+
+        local function BuildResults(Matches, Total)
+            local Order = 0
+
+            for _, Data in Matches do
+                Order += 1
+
+                local Holder = MakeFrame({
+                    Parent = Items.SearchResults.Instance,
+                    Size = UDim2.new(1, 0, 0, Data.Height + 20),
+                    Z = 3
+                })
+
+                Holder.Instance.LayoutOrder = Order
+                table.insert(ResultCards, Holder.Instance)
+
+                MakeText({
+                    Parent = Holder.Instance,
+                    Text = BreadCrumb(Data.Section),
+                    TextSize = 12,
+                    Pos = UDim2.fromOffset(14, 0),
+                    Size = UDim2.new(1, -28, 0, 14),
+                    Color = "DimText",
+                    Truncate = true,
+                    Z = 5
+                })
+
+                local Card = MakeFrame({
+                    Parent = Holder.Instance,
+                    Pos = UDim2.fromOffset(0, 18),
+                    Size = UDim2.new(1, 0, 0, Data.Height),
+                    Color = "Section",
+                    Round = 8,
+                    Z = 3
+                })
+
+                Data.Borrowed = true
+                Data.Frame.Instance.Parent = Card.Instance
+                Data.Frame.Instance.Position = UDim2.fromOffset(0, 0)
+                Data.Frame.Instance.Visible = true
+
+                table.insert(Borrowed, Data)
+            end
+
+            if Total > #Matches then
+                Order += 1
+
+                local More = MakeText({
+                    Parent = Items.SearchResults.Instance,
+                    Text = ("and %d more - narrow the search"):format(Total - #Matches),
+                    TextSize = 13,
+                    Size = UDim2.new(1, 0, 0, 20),
+                    Color = "DimText",
+                    Align = Enum.TextXAlignment.Center,
+                    Z = 10
+                })
+
+                More.Instance.LayoutOrder = Order
+                table.insert(ResultCards, More.Instance)
+            end
+        end
+
         local function RunSearch(Query)
             Query = string.lower(Query)
 
-            for _, Data in Library.Searchables do
-                if Data.Window ~= Window then continue end
+            ReturnBorrowed()
 
-                local Match = Query == ""
-                or string.find(string.lower(Data.Name), Query, 1, true) ~= nil
+            if Query == "" then
+                Window.Searching = false
+                Items.SearchResults.Instance.Visible = false
+                Items.SearchEmpty.Instance.Visible = false
 
-                if not Match and Data.Section then
-                    Match = string.find(string.lower(Data.Section.Name), Query, 1, true) ~= nil
+                for _, Data in Library.Searchables do
+                    if Data.Window == Window then
+                        Data.Visible = true
+
+                        if Data.Section then
+                            Data.Section.Dirty = true
+                        end
+                    end
                 end
 
-                Data.Visible = Match
+                for _, Tab in Window.Tabs do
+                    for _, Sub in Tab.Subs do
+                        for _, Section in Sub.Sections do
+                            if Section.Dirty then
+                                Section.Dirty = false
+                                Section:Reflow()
+                            end
+                        end
 
-                if Data.Section then
-                    Data.Section.Dirty = true
+                        if Sub.Items and Sub.Items.Page then
+                            Sub.Items.Page.Instance.Visible = Sub.Active == true
+                        end
+                    end
+                end
+
+                Window.SearchSig = nil
+
+                local Tab = Window.Current
+                local Sub = Tab and Tab.Current
+
+                if Sub and Sub.Show then
+                    Sub:Show()
+                end
+
+                return
+            end
+
+            Window.Searching = true
+
+            local Matches, Total = { }, 0
+
+            for _, Tab in Window.Tabs do
+                for _, Sub in Tab.Subs do
+                    for _, Section in Sub.Sections do
+                        for _, Data in Section.Rows do
+                            local Name = string.lower(Data.Name or "")
+                            local Hit = string.find(Name, Query, 1, true) ~= nil
+
+                            if not Hit then
+                                Hit = string.find(string.lower(Section.Name or ""), Query, 1, true) ~= nil
+                            end
+
+                            Data.Visible = not Hit
+
+                            if Hit then
+                                Total += 1
+
+                                if #Matches < 60 then
+                                    table.insert(Matches, Data)
+                                end
+                            end
+                        end
+
+                        Section.Dirty = true
+                    end
                 end
             end
 
@@ -3512,26 +3699,20 @@ local Library = { } do
                             Section:Reflow()
                         end
                     end
-                end
-            end
 
-            local Tab = Window.Current
-            local Sub = Tab and Tab.Current
-
-            if Sub and #Sub.Sections > 0 then
-                local Sig = tostring(Sub)
-
-                for _, Section in Sub.Sections do
-                    for _, Data in Section.Rows do
-                        Sig ..= Data.Visible ~= false and "1" or "0"
+                    if Sub.Items and Sub.Items.Page then
+                        Sub.Items.Page.Instance.Visible = false
                     end
                 end
-
-                if Sig ~= Window.SearchSig then
-                    Window.SearchSig = Sig
-                    Sub:Show()
-                end
             end
+
+            BuildResults(Matches, Total)
+
+            Items.SearchResults.Instance.Visible = #Matches > 0
+            Items.SearchResults.Instance.CanvasPosition = Vector2.new(0, 0)
+
+            Items.SearchEmpty.Instance.Visible = #Matches == 0
+            Items.SearchEmpty.Instance.Text = ("nothing matches \"%s\""):format(Items.SearchBox.Instance.Text)
         end
 
         local SearchToken = 0
@@ -4060,7 +4241,9 @@ local Library = { } do
             for _, Column in SubTab.Columns do
                 for _, Section in Column.Sections do
                     for _, Data in Section.Rows do
-                        Handler(Data, Section)
+                        if not Data.Borrowed then
+                            Handler(Data, Section)
+                        end
                     end
                 end
             end
@@ -4142,8 +4325,10 @@ local Library = { } do
                     PrimeParts(Section)
 
                     for _, Data in Section.Rows do
-                        Data.Frame:CancelFade()
-                        Data.Frame.Instance.Visible = false
+                        if not Data.Borrowed then
+                            Data.Frame:CancelFade()
+                            Data.Frame.Instance.Visible = false
+                        end
                     end
 
                     local Slot = Order
@@ -4154,7 +4339,7 @@ local Library = { } do
                         RevealParts(Section)
 
                         for RowIndex, Data in Section.Rows do
-                            if Data.Visible == false then continue end
+                            if Data.Visible == false or Data.Borrowed then continue end
 
                             task.delay(RowIndex * RowStep, function()
                                 local Home = UDim2.fromOffset(0, Data.Y)
@@ -4353,6 +4538,8 @@ local Library = { } do
             local Visible = 0
 
             for _, Data in Section.Rows do
+                if Data.Borrowed then continue end
+
                 local Shown = Data.Visible ~= false
 
                 Data.Frame.Instance.Visible = Shown
