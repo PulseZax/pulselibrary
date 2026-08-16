@@ -17,6 +17,7 @@ local Library = { } do
     local StatsService = cloneref(game:GetService("Stats"))
     local MarketplaceService = cloneref(game:GetService("MarketplaceService"))
     local ContentProvider = cloneref(game:GetService("ContentProvider"))
+    local AssetService = cloneref(game:GetService("AssetService"))
 
     local LocalPlayer = Players.LocalPlayer
     local GuiInset = GuiService:GetGuiInset().Y
@@ -669,6 +670,8 @@ local Library = { } do
             return { "TextTransparency", "BackgroundTransparency" }
         elseif Object:IsA("ImageLabel") or Object:IsA("ImageButton") then
             return { "BackgroundTransparency", "ImageTransparency" }
+        elseif Object:IsA("ViewportFrame") then
+            return { "BackgroundTransparency", "ImageTransparency" }
         elseif Object:IsA("ScrollingFrame") then
             return { "BackgroundTransparency", "ScrollBarImageTransparency" }
         elseif Object:IsA("Frame") then
@@ -691,8 +694,27 @@ local Library = { } do
     end
 
     local function CollectFadeable(Root)
-        local Children = Root:GetDescendants()
-        table.insert(Children, Root)
+        local Children = { Root }
+        local Count = 1
+        local Queue = { Root }
+        local Head = 1
+        local Tail = 1
+
+        while Head <= Tail do
+            local Node = Queue[Head]
+            Head += 1
+
+            for _, Child in Node:GetChildren() do
+                Count += 1
+                Children[Count] = Child
+
+                if not Child:IsA("ViewportFrame") then
+                    Tail += 1
+                    Queue[Tail] = Child
+                end
+            end
+        end
+
         return Children
     end
 
@@ -6187,6 +6209,860 @@ local Library = { } do
         end
 
         return setmetatable(Paragraph, Library)
+    end
+
+    do
+        local PreviewCache = getgenv().PulseEspPreviewCache
+
+        if type(PreviewCache) ~= "table" then
+            PreviewCache = { Models = { }, Failures = { } }
+            getgenv().PulseEspPreviewCache = PreviewCache
+        end
+
+        local Previews = { }
+        local Driver = nil
+        local MaxStud = 40
+
+        local EspDefaults = {
+            Box = true,
+            Corners = true,
+            Fill = false,
+            FillAlpha = 0.22,
+            Health = true,
+            Name = true,
+            Role = true,
+            Distance = true,
+            Tracer = false,
+            TracerFrom = "bottom",
+            TextSize = 13,
+            NameText = "mauszyx",
+            RoleText = "Civilian",
+            DistanceText = 42,
+            Color = Color3.fromRGB(120, 230, 140),
+            Demo = true
+        }
+
+        local function IsUsable(Model)
+            if typeof(Model) ~= "Instance" then return false end
+
+            local Ok, Result = pcall(function()
+                return Model.Parent == nil and #Model:GetChildren() > 0
+            end)
+
+            return Ok and Result == true
+        end
+
+        local function FetchRig(BundleId)
+            local Key = tostring(BundleId)
+
+            if IsUsable(PreviewCache.Models[Key]) then
+                return PreviewCache.Models[Key]
+            end
+
+            local Failed = PreviewCache.Failures[Key]
+            if Failed then return nil, Failed end
+
+            local function Fail(Reason)
+                PreviewCache.Failures[Key] = Reason
+                return nil, Reason
+            end
+
+            local Bundle
+            local Ok = pcall(function()
+                Bundle = AssetService:GetBundleDetailsAsync(BundleId)
+            end)
+
+            if not Ok or type(Bundle) ~= "table" or type(Bundle.Items) ~= "table" then
+                return Fail("bundle")
+            end
+
+            local OutfitId
+
+            for _, Item in Bundle.Items do
+                if Item.Type == "UserOutfit" then
+                    OutfitId = Item.Id
+                    break
+                end
+            end
+
+            if not OutfitId then return Fail("outfit") end
+
+            local Description
+            Ok = pcall(function()
+                Description = Players:GetHumanoidDescriptionFromOutfitId(OutfitId)
+            end)
+
+            if not Ok or typeof(Description) ~= "Instance" then return Fail("outfit") end
+
+            local Model
+            Ok = pcall(function()
+                Model = Players:CreateHumanoidModelFromDescription(Description, Enum.HumanoidRigType.R15)
+            end)
+
+            if not Ok or typeof(Model) ~= "Instance" then return Fail("rig") end
+
+            for _, Child in Model:GetDescendants() do
+                if Child:IsA("LuaSourceContainer") or Child:IsA("Humanoid") then
+                    Child:Destroy()
+                end
+            end
+
+            Model.Parent = nil
+            PreviewCache.Models[Key] = Model
+
+            return Model
+        end
+
+        local function MeasureRig(Model)
+            local Low, High
+
+            for _, Child in Model:GetDescendants() do
+                if not Child:IsA("BasePart") then continue end
+                if Child.Name == "HumanoidRootPart" then continue end
+                if Child.Transparency >= 1 then continue end
+
+                local Pose, Span = Child.CFrame, Child.Size
+
+                local Reach = Vector3.new(
+                    math.abs(Pose.RightVector.X) * Span.X + math.abs(Pose.UpVector.X) * Span.Y + math.abs(Pose.LookVector.X) * Span.Z,
+                    math.abs(Pose.RightVector.Y) * Span.X + math.abs(Pose.UpVector.Y) * Span.Y + math.abs(Pose.LookVector.Y) * Span.Z,
+                    math.abs(Pose.RightVector.Z) * Span.X + math.abs(Pose.UpVector.Z) * Span.Y + math.abs(Pose.LookVector.Z) * Span.Z
+                ) * 0.5
+
+                local A, B = Pose.Position - Reach, Pose.Position + Reach
+
+                Low = Low and Low:Min(A) or A
+                High = High and High:Max(B) or B
+            end
+
+            if not Low then return nil end
+
+            return (Low + High) * 0.5, High - Low
+        end
+
+        local function Frame3D(Preview)
+            local Span = Preview.Viewport.AbsoluteSize
+            if Span.X < 1 or Span.Y < 1 then return end
+
+            local Scale = Library:GetScreenScale()
+            if Scale <= 0 then Scale = 1 end
+
+            Preview.Width = Span.X / Scale
+            Preview.Height = Span.Y / Scale
+            Preview.Aspect = Span.X / Span.Y
+
+            if not Preview.Model then return end
+
+            local TanV = math.tan(math.rad(Preview.Camera.FieldOfView) * 0.5)
+            local TanH = TanV * Preview.Aspect
+
+            local DistV = Preview.Half / TanV + Preview.Radius
+            local DistH = Preview.Radius / math.sin(math.atan(TanH))
+
+            Preview.Dist = math.max(DistV, DistH) * Preview.Margin
+            Preview.TanV = TanV
+        end
+
+        local function Apply(Preview)
+            if not Preview.Model or not Preview.Dist then return end
+
+            local Spin = CFrame.Angles(0, Preview.Yaw, 0)
+            local Eye = Preview.Center + Spin * Vector3.new(0, 0, Preview.Dist)
+
+            local Pose = CFrame.lookAt(Eye, Preview.Center)
+
+            Preview.Camera.CFrame = Pose
+            Preview.Viewport.LightDirection = Spin * Preview.Light
+            Preview.Inverse = Pose:Inverse()
+        end
+
+        local function Project(Preview, Point)
+            if not Preview.Inverse or not Preview.TanV then return nil end
+
+            local Rel = Preview.Inverse * Point
+            local Depth = -Rel.Z
+
+            if Depth <= 0.05 then return nil end
+
+            local SpanY = Depth * Preview.TanV
+
+            return Vector2.new(
+                ((Rel.X / (SpanY * Preview.Aspect)) * 0.5 + 0.5) * Preview.Width,
+                (0.5 - (Rel.Y / SpanY) * 0.5) * Preview.Height
+            )
+        end
+
+        local function Wanted(Preview)
+            if not Preview.Model then return false end
+            if not Preview.Row.Instance.Parent then return false end
+            if Preview.Data.Window and Preview.Data.Window.IsOpen == false then return false end
+            if Preview.Data.Borrowed then return true end
+            if Preview.Data.Visible == false then return false end
+
+            return Preview.SubTab.Active == true
+        end
+
+        local function SetAwake(Preview, State)
+            if Preview.Awake == State then return end
+
+            Preview.Awake = State
+            Preview.SleepToken += 1
+
+            if State then
+                Preview.Viewport.Visible = true
+                Preview.Overlay.Visible = true
+                return
+            end
+
+            local Token = Preview.SleepToken
+
+            task.delay(Library.Animation.Time + 0.15, function()
+                if Preview.Awake or Preview.SleepToken ~= Token then return end
+
+                Preview.Viewport.Visible = false
+                Preview.Overlay.Visible = false
+            end)
+        end
+
+        local function Step(Delta)
+            for Index = #Previews, 1, -1 do
+                local Preview = Previews[Index]
+
+                if Preview.Dead or not Preview.Row.Instance.Parent then
+                    table.remove(Previews, Index)
+                    continue
+                end
+
+                local Want = Wanted(Preview)
+
+                if Want ~= Preview.Awake then
+                    SetAwake(Preview, Want)
+                end
+
+                if not Want then continue end
+
+                local Span = Preview.Viewport.AbsoluteSize
+
+                if Span.X ~= Preview.LastX or Span.Y ~= Preview.LastY then
+                    Preview.LastX = Span.X
+                    Preview.LastY = Span.Y
+
+                    Frame3D(Preview)
+                    Preview.Dirty = true
+                end
+
+                if not Preview.Dragging and Preview.Speed ~= 0 then
+                    Preview.Yaw += Delta * Preview.Speed
+                    Preview.Dirty = true
+                end
+
+                if Preview.Dirty then
+                    Preview.Dirty = false
+
+                    Apply(Preview)
+                    Preview:Solve()
+                    Preview:Layout()
+                end
+
+                Preview:StepHealth(Delta)
+            end
+        end
+
+        Library.EspPreview = function(Self, Params)
+            Params = Params or { }
+
+            local Section = Self
+            local SubTab = Section.SubTab
+
+            local Preview = {
+                Name = Params.Name or "ESP preview",
+                Bundle = Params.Bundle or 228468095335331,
+                Box = math.clamp(Params.Height or 200, 120, 360),
+                Section = Section,
+                SubTab = SubTab,
+                Yaw = math.rad(Params.Yaw or 0),
+                Speed = Params.Speed == nil and 0.45 or (tonumber(Params.Speed) or 0),
+                Margin = Params.Margin or 1.28,
+                Light = Vector3.new(-0.4, -0.7, -0.6),
+                Width = 1,
+                Height = 1,
+                Aspect = 1,
+                Awake = false,
+                Dirty = true,
+                Dragging = false,
+                Dead = false,
+                SleepToken = 0,
+                Clock = 0,
+                Accum = 0,
+                Frac = 1,
+                Rect = { On = false, X = 0, Y = 0, W = 0, H = 0 },
+                Options = { },
+                Segments = { },
+                Items = { }
+            }
+
+            for Key, Value in EspDefaults do
+                Preview.Options[Key] = Value
+            end
+
+            if type(Params.Options) == "table" then
+                for Key, Value in Params.Options do
+                    if EspDefaults[Key] ~= nil then
+                        Preview.Options[Key] = Value
+                    end
+                end
+            end
+
+            local Options = Preview.Options
+
+            local Row, Data = Section:AddRow(Preview.Box + 32, Params.SearchName or Preview.Name)
+            local Items = Preview.Items
+
+            Preview.Row = Row
+            Preview.Data = Data
+
+            Items.Label = MakeText({
+                Parent = Row.Instance,
+                Text = Preview.Name,
+                TextSize = 15,
+                Pos = UDim2.fromOffset(15, 4),
+                Size = UDim2.new(1, -30, 0, 18),
+                Color = "DimText",
+                Truncate = true,
+                Z = 5
+            })
+
+            Items.Stage = MakeFrame({
+                Parent = Row.Instance,
+                Pos = UDim2.fromOffset(15, 24),
+                Size = UDim2.new(1, -30, 0, Preview.Box),
+                Color = "Element",
+                Round = 6,
+                Clip = true,
+                Z = 5
+            })
+
+            Items.Viewport = Library:Create("ViewportFrame", {
+                Parent = Items.Stage.Instance,
+                Name = "\0",
+                Position = UDim2.fromOffset(0, 0),
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                ImageTransparency = 0,
+                Ambient = Color3.fromRGB(132, 132, 142),
+                LightColor = Color3.fromRGB(255, 252, 245),
+                LightDirection = Preview.Light,
+                BorderSizePixel = 0,
+                ZIndex = 6
+            })
+
+            Items.Viewport.Instance.Visible = false
+            Preview.Viewport = Items.Viewport.Instance
+
+            Preview.World = Library:Create("WorldModel", {
+                Parent = Preview.Viewport,
+                Name = "\0"
+            }).Instance
+
+            Preview.Camera = Library:Create("Camera", {
+                Parent = Preview.Viewport,
+                Name = "\0",
+                FieldOfView = math.clamp(Params.FieldOfView or 26, 5, 90)
+            }).Instance
+
+            Preview.Viewport.CurrentCamera = Preview.Camera
+
+            Items.Overlay = MakeFrame({
+                Parent = Items.Stage.Instance,
+                Pos = UDim2.fromOffset(0, 0),
+                Size = UDim2.new(1, 0, 1, 0),
+                Clip = true,
+                Z = 7
+            })
+
+            Items.Overlay.Instance.Visible = false
+            Preview.Overlay = Items.Overlay.Instance
+
+            Items.Status = MakeText({
+                Parent = Items.Stage.Instance,
+                Text = "Loading preview",
+                TextSize = 14,
+                Anchor = Vector2.new(0.5, 0.5),
+                Pos = UDim2.new(0.5, 0, 0.5, 0),
+                Size = UDim2.new(1, -20, 0, 20),
+                Align = Enum.TextXAlignment.Center,
+                Color = "DimText",
+                Z = 13
+            })
+
+            Items.Hit = MakeButton({
+                Parent = Items.Stage.Instance,
+                Z = 14
+            })
+
+            local function RawFrame(Z, Alpha, Color)
+                return Library:Create("Frame", {
+                    Parent = Preview.Overlay,
+                    Name = "\0",
+                    BackgroundColor3 = Color or Options.Color,
+                    BackgroundTransparency = Alpha or 0,
+                    BorderSizePixel = 0,
+                    Position = UDim2.fromOffset(0, 0),
+                    Size = UDim2.fromOffset(0, 0),
+                    Visible = false,
+                    ZIndex = Z
+                })
+            end
+
+            local function RawText(Z, TextSize, Color)
+                local Item = Library:Create("TextLabel", {
+                    Parent = Preview.Overlay,
+                    Name = "\0",
+                    FontFace = UiFont,
+                    Text = "",
+                    TextSize = TextSize,
+                    TextColor3 = Color or Options.Color,
+                    BackgroundTransparency = 1,
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                    Position = UDim2.fromOffset(0, 0),
+                    Size = UDim2.fromOffset(0, 0),
+                    Visible = false,
+                    BorderSizePixel = 0,
+                    ZIndex = Z
+                })
+
+                Library:Create("UIStroke", {
+                    Parent = Item.Instance,
+                    Name = "\0",
+                    Color = Color3.new(0, 0, 0),
+                    Thickness = 1,
+                    Transparency = 0.35
+                })
+
+                return Item
+            end
+
+            Items.Fill = RawFrame(8, Options.FillAlpha)
+            Items.Tracer = RawFrame(9, 0)
+            Items.Tracer.Instance.AnchorPoint = Vector2.new(0.5, 0.5)
+
+            for Index = 1, 8 do
+                Preview.Segments[Index] = RawFrame(10, 0)
+            end
+
+            Items.HealthBg = RawFrame(10, 0.3, Color3.fromRGB(14, 15, 18))
+            Items.HealthBar = RawFrame(11, 0)
+
+            Items.NameTag = RawText(12, Options.TextSize)
+            Items.RoleTag = RawText(12, Options.TextSize - 1)
+
+            table.insert(Previews, Preview)
+
+            if not Driver then
+                Driver = Library:Connect(RunService.RenderStepped, Step)
+            end
+
+            local function Place(Item, X, Y, W, H)
+                Item.Instance.Position = UDim2.fromOffset(math.round(X), math.round(Y))
+                Item.Instance.Size = UDim2.fromOffset(math.max(1, math.round(W)), math.max(1, math.round(H)))
+            end
+
+            local function Clamped(Point)
+                return Vector2.new(
+                    math.clamp(Point.X, 1, Preview.Width - 1),
+                    math.clamp(Point.Y, 1, Preview.Height - 1)
+                )
+            end
+
+            local function TracerOrigin()
+                local Mode = Options.TracerFrom
+
+                if Mode == "top" then
+                    return Vector2.new(Preview.Width * 0.5, 0)
+                elseif Mode == "centre" or Mode == "center" then
+                    return Vector2.new(Preview.Width * 0.5, Preview.Height * 0.5)
+                elseif Mode == "mouse" then
+                    local Scale = Library:GetScreenScale()
+                    if Scale <= 0 then Scale = 1 end
+
+                    local Point = UserInputService:GetMouseLocation()
+                    local Corner = Preview.Viewport.AbsolutePosition
+
+                    return Vector2.new(
+                        (Point.X - Corner.X) / Scale,
+                        (Point.Y - GuiInset - Corner.Y) / Scale
+                    )
+                end
+
+                return Vector2.new(Preview.Width * 0.5, Preview.Height)
+            end
+
+            function Preview:Solve()
+                local Rect = Preview.Rect
+                Rect.On = false
+
+                if not Preview.Model then return end
+
+                local Top = Project(Preview, Preview.Center + Vector3.new(0, Preview.Half + 0.4, 0))
+                local Bottom = Project(Preview, Preview.Center - Vector3.new(0, Preview.Half, 0))
+
+                if not Top or not Bottom then return end
+
+                local H = math.abs(Bottom.Y - Top.Y)
+                if H < 1 or H > Preview.Height * 12 then return end
+
+                local W = H * 0.52
+
+                Rect.X = (Top.X + Bottom.X) * 0.5 - W * 0.5
+                Rect.Y = math.min(Top.Y, Bottom.Y)
+                Rect.W = W
+                Rect.H = H
+                Rect.On = true
+            end
+
+            function Preview:Layout()
+                local Rect = Preview.Rect
+
+                if not Rect.On then
+                    for _, Segment in Preview.Segments do
+                        Segment.Instance.Visible = false
+                    end
+
+                    for _, Key in { "Fill", "Tracer", "HealthBg", "HealthBar", "NameTag", "RoleTag" } do
+                        Items[Key].Instance.Visible = false
+                    end
+
+                    return
+                end
+
+                local X, Y, W, H = Rect.X, Rect.Y, Rect.W, Rect.H
+
+                Items.Fill.Instance.Visible = Options.Fill
+
+                if Options.Fill then
+                    Place(Items.Fill, X, Y, W, H)
+                end
+
+                if Options.Box and Options.Corners then
+                    local Len = math.clamp(math.min(W, H) * 0.28, 3, 18)
+
+                    local Plan = {
+                        { X, Y, Len, 1 },
+                        { X, Y, 1, Len },
+                        { X + W - Len, Y, Len, 1 },
+                        { X + W - 1, Y, 1, Len },
+                        { X, Y + H - 1, Len, 1 },
+                        { X, Y + H - Len, 1, Len },
+                        { X + W - Len, Y + H - 1, Len, 1 },
+                        { X + W - 1, Y + H - Len, 1, Len }
+                    }
+
+                    for Index, Segment in Preview.Segments do
+                        local Spec = Plan[Index]
+
+                        Place(Segment, Spec[1], Spec[2], Spec[3], Spec[4])
+                        Segment.Instance.Visible = true
+                    end
+                elseif Options.Box then
+                    local Plan = {
+                        { X, Y, W, 1 },
+                        { X, Y + H - 1, W, 1 },
+                        { X, Y, 1, H },
+                        { X + W - 1, Y, 1, H }
+                    }
+
+                    for Index, Segment in Preview.Segments do
+                        local Spec = Plan[Index]
+
+                        if Spec then
+                            Place(Segment, Spec[1], Spec[2], Spec[3], Spec[4])
+                            Segment.Instance.Visible = true
+                        else
+                            Segment.Instance.Visible = false
+                        end
+                    end
+                else
+                    for _, Segment in Preview.Segments do
+                        Segment.Instance.Visible = false
+                    end
+                end
+
+                Items.HealthBg.Instance.Visible = Options.Health
+                Items.HealthBar.Instance.Visible = Options.Health
+
+                if Options.Health then
+                    local BarW = math.clamp(W * 0.07, 2, 5)
+                    local BarX = X - BarW - math.max(2, BarW)
+                    local Frac = Preview.Frac
+
+                    Place(Items.HealthBg, BarX, Y, BarW, H)
+                    Place(Items.HealthBar, BarX, Y + H * (1 - Frac), BarW, H * Frac)
+
+                    Items.HealthBar.Instance.BackgroundColor3 =
+                        Color3.fromRGB(255 - 200 * Frac, 40 + 200 * Frac, 60)
+                end
+
+                local Pad = 45
+
+                Items.NameTag.Instance.Visible = Options.Name
+
+                if Options.Name then
+                    if Items.NameTag.Instance.Text ~= Options.NameText then
+                        Items.NameTag.Instance.Text = Options.NameText
+                    end
+
+                    local NameY = math.clamp(Y - Options.TextSize - 3, 1, Preview.Height - Options.TextSize - 2)
+
+                    Place(Items.NameTag, X - Pad, NameY, W + Pad * 2, Options.TextSize + 2)
+                end
+
+                Items.RoleTag.Instance.Visible = Options.Role
+
+                if Options.Role then
+                    local Line = Options.RoleText
+
+                    if Options.Distance then
+                        Line = string.format("%s  %dm", Line, Options.DistanceText)
+                    end
+
+                    if Preview.LastRole ~= Line then
+                        Preview.LastRole = Line
+                        Items.RoleTag.Instance.Text = Line
+                    end
+
+                    local RoleY = math.clamp(Y + H + 3, 1, Preview.Height - Options.TextSize - 1)
+
+                    Place(Items.RoleTag, X - Pad, RoleY, W + Pad * 2, Options.TextSize + 1)
+                end
+
+                Items.Tracer.Instance.Visible = Options.Tracer
+
+                if Options.Tracer then
+                    local From = Clamped(TracerOrigin())
+                    local To = Clamped(Vector2.new(X + W * 0.5, Y + H))
+                    local Delta = To - From
+                    local Mid = (From + To) * 0.5
+
+                    Items.Tracer.Instance.Position = UDim2.fromOffset(math.round(Mid.X), math.round(Mid.Y))
+                    Items.Tracer.Instance.Size = UDim2.fromOffset(math.max(1, math.round(Delta.Magnitude)), 1)
+                    Items.Tracer.Instance.Rotation = math.deg(math.atan2(Delta.Y, Delta.X))
+                end
+            end
+
+            function Preview:StepHealth(Delta)
+                if not Options.Health or not Options.Demo then return end
+
+                Preview.Clock += Delta
+                Preview.Accum += Delta
+
+                if Preview.Accum < 0.05 then return end
+                Preview.Accum = 0
+
+                local T = Preview.Clock
+                local Frac = math.clamp(0.55 + 0.35 * math.sin(T * 0.9) * math.cos(T * 0.37), 0.05, 1)
+                local Rect = Preview.Rect
+
+                if not Rect.On then return end
+                if math.abs(Frac - Preview.Frac) * Rect.H < 0.5 then return end
+
+                Preview.Frac = Frac
+
+                local BarW = math.clamp(Rect.W * 0.07, 2, 5)
+                local BarX = Rect.X - BarW - math.max(2, BarW)
+
+                Place(Items.HealthBar, BarX, Rect.Y + Rect.H * (1 - Frac), BarW, Rect.H * Frac)
+
+                Items.HealthBar.Instance.BackgroundColor3 =
+                    Color3.fromRGB(255 - 200 * Frac, 40 + 200 * Frac, 60)
+            end
+
+            function Preview:Recolor()
+                for _, Segment in Preview.Segments do
+                    Segment.Instance.BackgroundColor3 = Options.Color
+                end
+
+                Items.Fill.Instance.BackgroundColor3 = Options.Color
+                Items.Tracer.Instance.BackgroundColor3 = Options.Color
+                Items.NameTag.Instance.TextColor3 = Options.Color
+                Items.RoleTag.Instance.TextColor3 = Options.Color
+
+                Items.NameTag.Instance.TextSize = Options.TextSize
+                Items.RoleTag.Instance.TextSize = math.max(1, Options.TextSize - 1)
+
+                Library:StampResting(Items.Fill.Instance, "BackgroundTransparency", Options.FillAlpha)
+
+                if Preview.Awake then
+                    Items.Fill.Instance.BackgroundTransparency = Options.FillAlpha
+                end
+            end
+
+            function Preview:SetOptions(New)
+                if type(New) ~= "table" then return Options end
+
+                for Key, Value in New do
+                    if EspDefaults[Key] == nil then continue end
+
+                    local Kind = type(Value)
+
+                    if Kind == "boolean" or Kind == "number" or Kind == "string" or typeof(Value) == "Color3" then
+                        Options[Key] = Value
+                    end
+                end
+
+                Preview:Recolor()
+                Preview.Dirty = true
+
+                if Preview.Model then
+                    Preview:Solve()
+                    Preview:Layout()
+                end
+
+                return Options
+            end
+
+            function Preview:GetOptions()
+                return Options
+            end
+
+            function Preview:SetSpeed(Value)
+                Preview.Speed = tonumber(Value) or 0
+                Preview.Dirty = true
+            end
+
+            function Preview:SetYaw(Degrees)
+                Preview.Yaw = math.rad(tonumber(Degrees) or 0)
+                Preview.Dirty = true
+            end
+
+            function Preview:Project(Point)
+                return Project(Preview, Point)
+            end
+
+            function Preview:GetStage()
+                return Items.Stage.Instance, Preview.Overlay
+            end
+
+            function Preview:Destroy()
+                Preview.Dead = true
+
+                for Index = #Previews, 1, -1 do
+                    if Previews[Index] == Preview then
+                        table.remove(Previews, Index)
+                    end
+                end
+
+                for Index = #Library.Searchables, 1, -1 do
+                    if Library.Searchables[Index] == Data then
+                        table.remove(Library.Searchables, Index)
+                    end
+                end
+
+                for Index = #Section.Rows, 1, -1 do
+                    if Section.Rows[Index] == Data then
+                        table.remove(Section.Rows, Index)
+                    end
+                end
+
+                Data.Visible = false
+                Data.OnWidth = nil
+                Data.Borrowed = nil
+                Data.Section = nil
+
+                pcall(function()
+                    Row.Instance:Destroy()
+                end)
+
+                Data.Frame = nil
+
+                if Section.Reflow then Section:Reflow() end
+            end
+
+            Data.OnWidth = function()
+                Frame3D(Preview)
+                Preview.Dirty = true
+            end
+
+            AttachDrag(Items.Hit, {
+                OnGrab = function(Input)
+                    Preview.Dragging = true
+                    Preview.DragX = Input.Position.X
+                end,
+
+                OnMove = function(Input)
+                    if not Preview.Dragging then return end
+
+                    local Scale = Library:GetScreenScale()
+                    if Scale <= 0 then Scale = 1 end
+
+                    Preview.Yaw -= ((Input.Position.X - Preview.DragX) / Scale) * 0.012
+                    Preview.DragX = Input.Position.X
+                    Preview.Dirty = true
+                end,
+
+                OnRelease = function()
+                    Preview.Dragging = false
+                end
+            })
+
+            Preview:Recolor()
+
+            Library:Thread(function()
+                local Source, Reason = FetchRig(Preview.Bundle)
+
+                if Preview.Dead or not Row.Instance.Parent then return end
+
+                if not Source then
+                    Items.Status.Instance.Text = "Preview unavailable (" .. tostring(Reason) .. ")"
+                    return
+                end
+
+                local Model = Source:Clone()
+                Model.Parent = Preview.World
+
+                local Center, Span = MeasureRig(Model)
+
+                if not Center or Span.X > MaxStud or Span.Y > MaxStud or Span.Z > MaxStud then
+                    RunService.RenderStepped:Wait()
+
+                    if Preview.Dead or not Row.Instance.Parent then
+                        Model:Destroy()
+                        return
+                    end
+
+                    Center, Span = MeasureRig(Model)
+                end
+
+                if not Center or Span.X > MaxStud or Span.Y > MaxStud or Span.Z > MaxStud then
+                    Model:Destroy()
+                    Items.Status.Instance.Text = "Preview unavailable (rig)"
+                    return
+                end
+
+                for _, Child in Model:GetDescendants() do
+                    if Child:IsA("BasePart") then
+                        Child.Anchored = true
+                        Child.CanCollide = false
+                        Child.CanQuery = false
+                        Child.CanTouch = false
+                        Child.CastShadow = false
+                    end
+                end
+
+                Preview.Model = Model
+                Preview.Center = Center
+                Preview.Half = Span.Y * 0.5
+                Preview.Radius = math.sqrt(Span.X * Span.X + Span.Z * Span.Z) * 0.5
+
+                Items.Status.Instance.Visible = false
+
+                Frame3D(Preview)
+                Apply(Preview)
+
+                Preview.Dirty = true
+            end)
+
+            return setmetatable(Preview, Library)
+        end
     end
 
     Library.ThemeConfig = function(Self, Params)
