@@ -363,21 +363,37 @@ local Library = { } do
         Object.ImageRectSize = ToVector2(Size)
     end
 
-    local function MeasureText(Text, Size, Width, FontFace)
-        local Ok, Bounds = pcall(function()
-            return TextService:GetTextBoundsAsync({
-                Text = Text,
-                Font = FontFace or UiFont,
-                Size = Size,
-                Width = Width
-            })
-        end)
+    local MeasureParams
 
-        if Ok and Bounds then
-            return Bounds
+    local function MeasureText(Text, Size, Width, FontFace)
+        Text = tostring(Text or "")
+        Size = tonumber(Size) or 15
+        Width = tonumber(Width) or 0
+
+        if not MeasureParams then
+            local Ok, Made = pcall(function()
+                return Instance.new("GetTextBoundsParams")
+            end)
+
+            MeasureParams = (Ok and Made) or false
         end
 
-        local Estimate = math.min(#Text * Size * 0.52, Width)
+        if MeasureParams then
+            local Ok, Bounds = pcall(function()
+                MeasureParams.Text = Text
+                MeasureParams.Font = FontFace or UiFont
+                MeasureParams.Size = Size
+                MeasureParams.Width = Width
+
+                return TextService:GetTextBoundsAsync(MeasureParams)
+            end)
+
+            if Ok and typeof(Bounds) == "Vector2" then
+                return Bounds
+            end
+        end
+
+        local Estimate = Width > 0 and math.min(#Text * Size * 0.52, Width) or (#Text * Size * 0.52)
         return Vector2.new(Estimate, Size * 1.25)
     end
 
