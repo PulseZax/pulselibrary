@@ -6244,6 +6244,8 @@ local Library = { } do
             Corners = true,
             Fill = false,
             FillAlpha = 0.22,
+            Outline = false,
+            OutlineFill = 0.72,
             Health = true,
             Name = true,
             Role = true,
@@ -6329,6 +6331,50 @@ local Library = { } do
             return Model
         end
 
+        local function FlattenShell(Model, Colour)
+            for _, Child in Model:GetDescendants() do
+                if Child:IsA("BasePart") then
+                    if Child.Transparency >= 1 or Child.Name == "HumanoidRootPart" then
+                        Child.Transparency = 1
+                    else
+                        Child.Color = Colour
+                        Child.Material = Enum.Material.Neon
+                        Child.Transparency = 0
+                        Child.Reflectance = 0
+                        pcall(function() Child.TextureID = "" end)
+                    end
+
+                    Child.Anchored = true
+                    Child.CastShadow = false
+                    Child.CanCollide = false
+                    Child.CanQuery = false
+                    Child.CanTouch = false
+                elseif Child:IsA("Decal") or Child:IsA("Texture") or Child:IsA("SurfaceAppearance")
+                    or Child:IsA("ParticleEmitter") or Child:IsA("Beam") or Child:IsA("Trail")
+                    or Child:IsA("Light") or Child:IsA("LayerCollector") or Child:IsA("Fire")
+                    or Child:IsA("Smoke") or Child:IsA("Sparkles") then
+                    pcall(function() Child:Destroy() end)
+                end
+            end
+        end
+
+        local function GrowShell(Model, Thickness)
+            local Bulk = Vector3.new(Thickness, Thickness, Thickness)
+
+            for _, Child in Model:GetDescendants() do
+                if not Child:IsA("BasePart") then continue end
+
+                local Mesh = Child:FindFirstChildWhichIsA("SpecialMesh")
+
+                if Mesh then
+                    local Span = math.max(Child.Size.X, Child.Size.Y, Child.Size.Z, 0.05)
+                    Mesh.Scale *= 1 + Thickness / Span
+                else
+                    Child.Size += Bulk
+                end
+            end
+        end
+
         local function MeasureRig(Model)
             local Low, High
 
@@ -6390,6 +6436,13 @@ local Library = { } do
             Preview.Camera.CFrame = Pose
             Preview.Viewport.LightDirection = Spin * Preview.Light
             Preview.Inverse = Pose:Inverse()
+
+            if Preview.RimCamera then
+                Preview.RimCamera.CFrame = Pose
+                Preview.ChamsCamera.CFrame = Pose
+                Preview.Rim.LightDirection = Spin * Preview.Light
+                Preview.Chams.LightDirection = Spin * Preview.Light
+            end
         end
 
         local function Project(Preview, Point)
@@ -6427,6 +6480,12 @@ local Library = { } do
             if State then
                 Preview.Viewport.Visible = true
                 Preview.Overlay.Visible = true
+
+                if Preview.Rim then
+                    Preview.Rim.Visible = Preview.RimOn == true
+                    Preview.Chams.Visible = Preview.RimOn == true
+                end
+
                 return
             end
 
@@ -6437,6 +6496,11 @@ local Library = { } do
 
                 Preview.Viewport.Visible = false
                 Preview.Overlay.Visible = false
+
+                if Preview.Rim then
+                    Preview.Rim.Visible = false
+                    Preview.Chams.Visible = false
+                end
             end)
         end
 
@@ -6480,6 +6544,10 @@ local Library = { } do
                     Preview:Layout()
                 end
 
+                if Preview.Options.Outline and not Preview.Shell and Preview.Dist then
+                    pcall(function() Preview:ApplyOutline() end)
+                end
+
                 Preview:StepHealth(Delta)
             end
         end
@@ -6500,6 +6568,8 @@ local Library = { } do
                 Speed = Params.Speed == nil and 0.45 or (tonumber(Params.Speed) or 0),
                 Margin = Params.Margin or 1.28,
                 Light = Vector3.new(-0.4, -0.7, -0.6),
+                OutlineWidth = math.clamp(tonumber(Params.OutlineWidth) or 2.5, 0.5, 12),
+                RimOn = false,
                 Width = 1,
                 Height = 1,
                 Aspect = 1,
@@ -6569,7 +6639,7 @@ local Library = { } do
                 LightColor = Color3.fromRGB(255, 252, 245),
                 LightDirection = Preview.Light,
                 BorderSizePixel = 0,
-                ZIndex = 6
+                ZIndex = 7
             })
 
             Items.Viewport.Instance.Visible = false
@@ -6588,12 +6658,72 @@ local Library = { } do
 
             Preview.Viewport.CurrentCamera = Preview.Camera
 
+            Items.Rim = Library:Create("ViewportFrame", {
+                Parent = Items.Stage.Instance,
+                Name = "\0",
+                Position = UDim2.fromOffset(0, 0),
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                ImageTransparency = 0,
+                Ambient = Color3.new(1, 1, 1),
+                LightColor = Color3.new(1, 1, 1),
+                LightDirection = Preview.Light,
+                BorderSizePixel = 0,
+                ZIndex = 6
+            })
+
+            Items.Rim.Instance.Visible = false
+            Preview.Rim = Items.Rim.Instance
+
+            Preview.RimWorld = Library:Create("WorldModel", {
+                Parent = Preview.Rim,
+                Name = "\0"
+            }).Instance
+
+            Preview.RimCamera = Library:Create("Camera", {
+                Parent = Preview.Rim,
+                Name = "\0",
+                FieldOfView = math.clamp(Params.FieldOfView or 26, 5, 90)
+            }).Instance
+
+            Preview.Rim.CurrentCamera = Preview.RimCamera
+
+            Items.Chams = Library:Create("ViewportFrame", {
+                Parent = Items.Stage.Instance,
+                Name = "\0",
+                Position = UDim2.fromOffset(0, 0),
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                ImageTransparency = 0.72,
+                Ambient = Color3.new(1, 1, 1),
+                LightColor = Color3.new(1, 1, 1),
+                LightDirection = Preview.Light,
+                BorderSizePixel = 0,
+                ZIndex = 8
+            })
+
+            Items.Chams.Instance.Visible = false
+            Preview.Chams = Items.Chams.Instance
+
+            Preview.ChamsWorld = Library:Create("WorldModel", {
+                Parent = Preview.Chams,
+                Name = "\0"
+            }).Instance
+
+            Preview.ChamsCamera = Library:Create("Camera", {
+                Parent = Preview.Chams,
+                Name = "\0",
+                FieldOfView = math.clamp(Params.FieldOfView or 26, 5, 90)
+            }).Instance
+
+            Preview.Chams.CurrentCamera = Preview.ChamsCamera
+
             Items.Overlay = MakeFrame({
                 Parent = Items.Stage.Instance,
                 Pos = UDim2.fromOffset(0, 0),
                 Size = UDim2.new(1, 0, 1, 0),
                 Clip = true,
-                Z = 7
+                Z = 9
             })
 
             Items.Overlay.Instance.Visible = false
@@ -6608,12 +6738,12 @@ local Library = { } do
                 Size = UDim2.new(1, -20, 0, 20),
                 Align = Enum.TextXAlignment.Center,
                 Color = "DimText",
-                Z = 13
+                Z = 15
             })
 
             Items.Hit = MakeButton({
                 Parent = Items.Stage.Instance,
-                Z = 14
+                Z = 16
             })
 
             local function RawFrame(Z, Alpha, Color)
@@ -6658,19 +6788,19 @@ local Library = { } do
                 return Item
             end
 
-            Items.Fill = RawFrame(8, Options.FillAlpha)
-            Items.Tracer = RawFrame(9, 0)
+            Items.Fill = RawFrame(10, Options.FillAlpha)
+            Items.Tracer = RawFrame(11, 0)
             Items.Tracer.Instance.AnchorPoint = Vector2.new(0.5, 0.5)
 
             for Index = 1, 8 do
-                Preview.Segments[Index] = RawFrame(10, 0)
+                Preview.Segments[Index] = RawFrame(12, 0)
             end
 
-            Items.HealthBg = RawFrame(10, 0.3, Color3.fromRGB(14, 15, 18))
-            Items.HealthBar = RawFrame(11, 0)
+            Items.HealthBg = RawFrame(12, 0.3, Color3.fromRGB(14, 15, 18))
+            Items.HealthBar = RawFrame(13, 0)
 
-            Items.NameTag = RawText(12, Options.TextSize)
-            Items.RoleTag = RawText(12, Options.TextSize - 1)
+            Items.NameTag = RawText(14, Options.TextSize)
+            Items.RoleTag = RawText(14, Options.TextSize - 1)
 
             table.insert(Previews, Preview)
 
@@ -6912,6 +7042,60 @@ local Library = { } do
                 end
             end
 
+            function Preview:ApplyOutline()
+                if Options.Outline and Preview.Model and not Preview.Shell
+                    and not Preview.Dead and Preview.Dist and Preview.Height > 1 then
+                    local Ok, Shell = pcall(function()
+                        return Preview.Model:Clone()
+                    end)
+
+                    local Fine, Body = pcall(function()
+                        return Preview.Model:Clone()
+                    end)
+
+                    if Ok and Fine and typeof(Shell) == "Instance" and typeof(Body) == "Instance" then
+                        local PerPixel = (2 * Preview.Dist * Preview.TanV) / Preview.Height
+
+                        FlattenShell(Shell, Options.Color)
+                        FlattenShell(Body, Options.Color)
+                        GrowShell(Shell, math.clamp(2 * Preview.OutlineWidth * PerPixel, 0.01, 2))
+
+                        Shell.Parent = Preview.RimWorld
+                        Body.Parent = Preview.ChamsWorld
+
+                        Preview.Shell = Shell
+                        Preview.Body = Body
+                        Preview.ShellParts = { }
+
+                        for _, Child in Shell:GetDescendants() do
+                            if Child:IsA("BasePart") and Child.Transparency < 1 then
+                                table.insert(Preview.ShellParts, Child)
+                            end
+                        end
+
+                        for _, Child in Body:GetDescendants() do
+                            if Child:IsA("BasePart") and Child.Transparency < 1 then
+                                table.insert(Preview.ShellParts, Child)
+                            end
+                        end
+                    else
+                        if typeof(Shell) == "Instance" then pcall(function() Shell:Destroy() end) end
+                        if typeof(Body) == "Instance" then pcall(function() Body:Destroy() end) end
+                    end
+                end
+
+                Preview.RimOn = Options.Outline == true and Preview.Shell ~= nil
+                Preview.Rim.Visible = Preview.RimOn and Preview.Awake
+                Preview.Chams.Visible = Preview.RimOn and Preview.Awake
+                Preview.Chams.ImageTransparency = math.clamp(Options.OutlineFill, 0, 1)
+
+                if not Preview.ShellParts then return end
+
+                for _, Part in Preview.ShellParts do
+                    Part.Color = Options.Color
+                end
+            end
+
             function Preview:SetOptions(New)
                 if type(New) ~= "table" then return Options end
 
@@ -6926,6 +7110,7 @@ local Library = { } do
                 end
 
                 Preview:Recolor()
+                pcall(function() Preview:ApplyOutline() end)
                 Preview.Dirty = true
 
                 if Preview.Model then
@@ -6960,6 +7145,18 @@ local Library = { } do
 
             function Preview:Destroy()
                 Preview.Dead = true
+
+                if Preview.Shell then
+                    pcall(function() Preview.Shell:Destroy() end)
+                    Preview.Shell = nil
+                end
+
+                if Preview.Body then
+                    pcall(function() Preview.Body:Destroy() end)
+                    Preview.Body = nil
+                end
+
+                Preview.ShellParts = nil
 
                 for Index = #Previews, 1, -1 do
                     if Previews[Index] == Preview then
@@ -7073,6 +7270,7 @@ local Library = { } do
 
                 Frame3D(Preview)
                 Apply(Preview)
+                pcall(function() Preview:ApplyOutline() end)
 
                 Preview.Dirty = true
             end)
