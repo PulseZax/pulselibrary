@@ -1,5 +1,4 @@
---v0.141
-
+--v0.146
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -5379,6 +5378,15 @@ local Library = { } do
             return Slider.Value
         end
 
+        function Slider:SetRange(MinValue, MaxValue)
+            Slider.Min = tonumber(MinValue) or Slider.Min
+            Slider.Max = tonumber(MaxValue) or Slider.Max
+
+            if Slider.Max < Slider.Min then Slider.Max = Slider.Min end
+
+            Slider:Set(Slider.Value, true)
+        end
+
         local function Calculate(Input)
             local Fraction = AxisFraction(Input, Items.Track.Instance, "X")
             return Slider.Min + (Slider.Max - Slider.Min) * Fraction
@@ -7586,6 +7594,7 @@ local Library = { } do
         end
 
         PaintAutoSave()
+        Library.AutoSaveChanged = PaintAutoSave
 
         Items.AutoHit:Connect("MouseButton1Down", function()
             PlaySweep(Items.AutoSweep.Instance)
@@ -7725,7 +7734,20 @@ local Library = { } do
 
         SubTab.OnResize = function()
             LayoutCells(Window.ColW)
+
+            local Bottom = 0
+
+            for _, Frame in { Items.InfoPanel, Items.ThemePanel, Items.SavePanel } do
+                local Edge = Frame.Instance.Position.Y.Offset + Frame.Instance.Size.Y.Offset
+                if Edge > Bottom then Bottom = Edge end
+            end
+
+            Items.RightScroll.Instance.CanvasSize = UDim2.fromOffset(0, Bottom)
         end
+
+        Items.RightScroll.Instance:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            Library:CloseAllPopups()
+        end)
 
         MakeText({
             Parent = Items.ThemePanel.Instance,
@@ -8017,8 +8039,9 @@ local Library = { } do
         local Blocks = {
             { Frame = Items.CreateBox, Home = UDim2.fromOffset(0, 0) },
             { Frame = Items.ListHolder, Home = UDim2.fromOffset(0, 52) },
-            { Frame = Items.InfoPanel, Home = UDim2.new(0.5, 8, 0, 0) },
-            { Frame = Items.ThemePanel, Home = UDim2.new(0.5, 8, 0, 216) }
+            { Frame = Items.InfoPanel, Home = UDim2.fromOffset(0, 0) },
+            { Frame = Items.ThemePanel, Home = UDim2.fromOffset(0, 216) },
+            { Frame = Items.SavePanel, Home = UDim2.fromOffset(0, 420) }
         }
 
         local BlockSlide = 30
@@ -8431,6 +8454,7 @@ local Library = { } do
             end
         end)
 
+        if Library.AutoSaveChanged then pcall(Library.AutoSaveChanged) end
         if not Library.AutoSave then return false end
 
         return Library:LoadConfigFile(Library.AutoSaveName)
@@ -8449,6 +8473,8 @@ local Library = { } do
         Library.AutoSave = true
         Library.AutoSaveClock = 0
         Library.AutoSaveLast = nil
+
+        if Library.AutoSaveChanged then pcall(Library.AutoSaveChanged) end
 
         return Library:LoadConfigFile(Library.AutoSaveName)
     end
