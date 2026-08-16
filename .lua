@@ -1,4 +1,5 @@
---v0.14
+--v0.141
+
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -31,6 +32,10 @@ local Library = { } do
 
     Library.Directory = "PulseLib"
     Library.ConfigFolder = "PulseLib/Configs"
+    Library.AutoSaveName = "Pulse_AutoSave"
+    Library.AutoSave = false
+    Library.AutoSaveClock = 0
+    Library.AutoSaveLast = nil
     Library.AssetsFolder = "PulseLib/Assets"
     Library.LegacyDirectory = "Zolar"
 
@@ -7398,10 +7403,25 @@ local Library = { } do
             Padding = UDim.new(0, 8)
         })
 
-        Items.InfoPanel = MakeFrame({
+        Items.RightScroll = Library:Create("ScrollingFrame", {
             Parent = Page.Instance,
-            Pos = UDim2.new(0.5, 8, 0, 0),
-            Size = UDim2.new(0.5, -8, 0, 204),
+            Name = "\0",
+            BackgroundTransparency = 1,
+            ScrollBarThickness = 0,
+            ScrollBarImageTransparency = 1,
+            Selectable = false,
+            Active = true,
+            Position = UDim2.new(0.5, 8, 0, 0),
+            Size = UDim2.new(0.5, -8, 1, 0),
+            CanvasSize = UDim2.fromOffset(0, 496),
+            ZIndex = 3,
+            BorderSizePixel = 0
+        })
+
+        Items.InfoPanel = MakeFrame({
+            Parent = Items.RightScroll.Instance,
+            Pos = UDim2.fromOffset(0, 0),
+            Size = UDim2.new(1, 0, 0, 204),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -7506,13 +7526,72 @@ local Library = { } do
         end
 
         Items.ThemePanel = MakeFrame({
-            Parent = Page.Instance,
-            Pos = UDim2.new(0.5, 8, 0, 216),
-            Size = UDim2.new(0.5, -8, 0, 194),
+            Parent = Items.RightScroll.Instance,
+            Pos = UDim2.fromOffset(0, 216),
+            Size = UDim2.new(1, 0, 0, 194),
             Color = "Section",
             Round = 10,
             Z = 3
         })
+
+        Items.SavePanel = MakeFrame({
+            Parent = Items.RightScroll.Instance,
+            Pos = UDim2.fromOffset(0, 420),
+            Size = UDim2.new(1, 0, 0, 76),
+            Color = "Section",
+            Round = 10,
+            Z = 3
+        })
+
+        MakeText({
+            Parent = Items.SavePanel.Instance,
+            Text = "Auto save",
+            TextSize = 15,
+            Pos = UDim2.fromOffset(14, 10),
+            Size = UDim2.new(1, -28, 0, 20),
+            Color = "Text",
+            Z = 4
+        })
+
+        Items.AutoBox = MakeFrame({
+            Parent = Items.SavePanel.Instance,
+            Pos = UDim2.fromOffset(14, 36),
+            Size = UDim2.new(1, -28, 0, 28),
+            Color = "Element",
+            Round = 6,
+            Clip = true,
+            Z = 4
+        })
+
+        HoverSwap(Items.AutoBox)
+        Items.AutoSweep = MakeSweep(Items.AutoBox.Instance, 5)
+
+        Items.AutoText = MakeText({
+            Parent = Items.AutoBox.Instance,
+            Text = "off",
+            TextSize = 15,
+            Size = UDim2.new(1, 0, 1, 0),
+            Color = "Text",
+            Align = Enum.TextXAlignment.Center,
+            Z = 6
+        })
+
+        Items.AutoHit = MakeButton({
+            Parent = Items.AutoBox.Instance,
+            Z = 7
+        })
+
+        local function PaintAutoSave()
+            Items.AutoText.Instance.Text = Library.AutoSave and Library.AutoSaveName or "off"
+        end
+
+        PaintAutoSave()
+
+        Items.AutoHit:Connect("MouseButton1Down", function()
+            PlaySweep(Items.AutoSweep.Instance)
+            Library:SetAutoSave(not Library.AutoSave)
+            PaintAutoSave()
+        end)
 
         MakeText({
             Parent = Items.ThemePanel.Instance,
@@ -8337,6 +8416,43 @@ local Library = { } do
         return Library:LoadConfig(readfile(Path))
     end
 
+    Library.AutoSaveMarker = function(Self)
+        return Library.Directory .. "/autosave.txt"
+    end
+
+    Library.SetAutoSave = function(Self, State)
+        Library.AutoSave = State and true or false
+        Library.AutoSaveClock = 0
+        Library.AutoSaveLast = nil
+
+        pcall(function()
+            if writefile then
+                writefile(Library:AutoSaveMarker(), Library.AutoSave and "1" or "0")
+            end
+        end)
+
+        if not Library.AutoSave then return false end
+
+        return Library:LoadConfigFile(Library.AutoSaveName)
+    end
+
+    Library.ResumeAutoSave = function(Self)
+        local Wanted = false
+
+        pcall(function()
+            local Path = Library:AutoSaveMarker()
+            if isfile and isfile(Path) then Wanted = readfile(Path) == "1" end
+        end)
+
+        if not Wanted then return false end
+
+        Library.AutoSave = true
+        Library.AutoSaveClock = 0
+        Library.AutoSaveLast = nil
+
+        return Library:LoadConfigFile(Library.AutoSaveName)
+    end
+
     Library.ListConfigs = function(Self)
         local Result = { }
 
@@ -8353,6 +8469,23 @@ local Library = { } do
     end
 
     Library:Connect(RunService.Heartbeat, function(Delta)
+        if Library.AutoSave and writefile and not Library.Silent then
+            Library.AutoSaveClock += Delta or 0
+
+            if Library.AutoSaveClock >= 2 then
+                Library.AutoSaveClock = 0
+
+                local Ok, Data = pcall(function() return Library:GetConfig() end)
+
+                if Ok and type(Data) == "string" and Data ~= Library.AutoSaveLast then
+                    Library.AutoSaveLast = Data
+                    pcall(function()
+                        writefile(Library.ConfigFolder .. "/" .. Library.AutoSaveName .. ".json", Data)
+                    end)
+                end
+            end
+        end
+
         if Library.ThemeDirty then
             Library.ThemeDirty = false
             Library:ApplyThemeInstant()
