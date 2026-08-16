@@ -1,4 +1,4 @@
---v1.11
+--v0.12
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -2194,6 +2194,23 @@ local Library = { } do
         return Picker
     end
 
+    local function PulseNotifyReopen(Window)
+        if Library.Silent or Library.ReopenHintShown then return end
+
+        Library.ReopenHintShown = true
+
+        local Key = Library.MenuKeybind
+        local KeyText = (typeof(Key) == "EnumItem" and Key.Name) or tostring(Key)
+        local Where = Library.WatermarkBar and "Click the watermark or press " or "Press "
+
+        Library:Notification({
+            Name = "Menu hidden",
+            Description = Where .. KeyText .. " to bring it back.",
+            Icon = "eye-off",
+            Duration = 6
+        })
+    end
+
     local function KeyName(Key)
         if not Key then return "None" end
 
@@ -2686,6 +2703,8 @@ local Library = { } do
 
         Items.WindowCloseHit:Connect("MouseButton1Down", function()
             Window:SetOpen(false)
+
+            PulseNotifyReopen(Window)
         end)
 
         local Profile = {
@@ -6528,11 +6547,53 @@ local Library = { } do
 
         local Watermark = { Instance = Items.Bar.Instance }
 
+        if Self and Self.SetOpen then
+            Library.WatermarkTarget = Self
+        end
+
+        do
+            local PressAt, PressAt2, PressClock = nil, nil, 0
+
+            local function IsPointer(Input)
+                return Input.UserInputType == Enum.UserInputType.MouseButton1
+                    or Input.UserInputType == Enum.UserInputType.Touch
+            end
+
+            Library:Connect(Items.Bar.Instance.InputBegan, function(Input)
+                if not IsPointer(Input) then return end
+
+                PressAt = Input.Position
+                PressAt2 = Vector2.new(PressAt.X, PressAt.Y)
+                PressClock = os.clock()
+            end)
+
+            Library:Connect(Items.Bar.Instance.InputEnded, function(Input)
+                if not IsPointer(Input) or not PressAt2 then return end
+
+                local Here = Vector2.new(Input.Position.X, Input.Position.Y)
+                local Moved = (Here - PressAt2).Magnitude
+
+                PressAt, PressAt2 = nil, nil
+
+                if Moved > 6 or os.clock() - PressClock > 0.6 then return end
+
+                local Target = Library.WatermarkTarget or Library.Windows[1]
+
+                if Target and Target.SetOpen then
+                    Target:SetOpen(not Target.IsOpen)
+                end
+            end)
+        end
+
         function Watermark:SetIcon(NewIcon)
             ApplyIcon(Items.Icon.Instance, NewIcon)
         end
 
         function Watermark:SetName()
+        end
+
+        function Watermark:SetTarget(Window)
+            Library.WatermarkTarget = Window
         end
 
         function Watermark:SetVisible(Bool)
