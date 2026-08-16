@@ -1,4 +1,4 @@
---v0.12
+--v0.13
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -120,12 +120,22 @@ local Library = { } do
             end
         end
 
+        local function Fingerprint(Data)
+            local Hash = 5381
+
+            for Index = 1, #Data, 17 do
+                Hash = (Hash * 33 + string.byte(Data, Index)) % 4294967296
+            end
+
+            return string.format("%x", Hash) .. tostring(#Data)
+        end
+
         local function BuildLogo()
             if type(writefile) ~= "function" or type(getcustomasset) ~= "function" then
                 return nil
             end
 
-            local Path = Library.AssetsFolder .. "/Logo.png"
+            local Path = Library.AssetsFolder .. "/Logo" .. Fingerprint(Library.LogoData) .. ".png"
 
             if type(isfile) == "function" and isfile(Path) then
                 local Ok, Body = pcall(readfile, Path)
@@ -227,13 +237,51 @@ local Library = { } do
     Library.Font = UiFont
     Library.TitleFont = UiFontBold
 
-    local IconPack
+    local PackRoot = "https://raw.githubusercontent.com/StyearX/Icons/refs/heads/main/"
 
-    pcall(function()
-        local Url = "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"
-        IconPack = loadstring(game:HttpGetAsync(Url))()
-        IconPack.SetIconsType("lucide")
-    end)
+    Library.IconPacks = {
+        lucide    = PackRoot .. "lucide/dist/Icons.lua",
+        gravity   = PackRoot .. "gravity/dist/Icons.lua",
+        solar     = PackRoot .. "solar/dist/Icons.lua",
+        sfsymbols = PackRoot .. "sfsymbols/dist/Icons.lua",
+        craft     = PackRoot .. "craft/dist/Icons.lua",
+        geist     = PackRoot .. "geist/dist/Icons.lua",
+        hero      = PackRoot .. "hero/dist/Icons.lua",
+        gmi       = PackRoot .. "GoogleMaterialIcons/dist/Icons.lua"
+    }
+
+    Library.IconPack = "lucide"
+
+    local LoadedPacks = { }
+    local LegacyPack
+
+    local function GetPack(Name)
+        local Cached = LoadedPacks[Name]
+
+        if Cached ~= nil then
+            return Cached or nil
+        end
+
+        local Url = Library.IconPacks[Name]
+
+        if not Url then
+            LoadedPacks[Name] = false
+            return nil
+        end
+
+        local Ok, Result = pcall(function()
+            return loadstring(game:HttpGet(Url))()
+        end)
+
+        LoadedPacks[Name] = (Ok and type(Result) == "table" and Result) or false
+        return LoadedPacks[Name] or nil
+    end
+
+    Library.GetIconPack = function(Self, Name)
+        return GetPack(Name or Library.IconPack)
+    end
+
+    pcall(GetPack, "lucide")
 
     local function ResolveIcon(Icon)
         if type(Icon) == "number" then
@@ -252,9 +300,38 @@ local Library = { } do
             return "rbxassetid://" .. Icon
         end
 
-        if IconPack then
+        local PackName, Key = string.match(Icon, "^(%w+):(.+)$")
+
+        if PackName and Library.IconPacks[PackName] then
+            local Pack = GetPack(PackName)
+            local Found = Pack and Pack[Key]
+
+            if Found then
+                return Found
+            end
+
+            Icon = Key
+        end
+
+        local Base = GetPack(Library.IconPack)
+
+        if Base and Base[Icon] then
+            return Base[Icon]
+        end
+
+        if LegacyPack == nil then
             local Ok, Result = pcall(function()
-                return IconPack.GetIcon(Icon)
+                local Loaded = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
+                Loaded.SetIconsType("lucide")
+                return Loaded
+            end)
+
+            LegacyPack = (Ok and Result) or false
+        end
+
+        if LegacyPack then
+            local Ok, Result = pcall(function()
+                return LegacyPack.GetIcon(Icon)
             end)
 
             if Ok and Result and Result ~= "rbxassetid://0" then
@@ -2469,6 +2546,16 @@ local Library = { } do
         local SubCenterX = MainX + math.floor(W / 2)
         local MaxSubW = W - 120
 
+        local function Recompute()
+            SubY = H - math.floor(SubH / 2)
+            RootW = MainX + W
+            RootH = SubY + SubH
+            ColW = math.floor((W - 46) / 2)
+            Col2X = ColW + 16
+            SubCenterX = MainX + math.floor(W / 2)
+            MaxSubW = W - 120
+        end
+
         local Window = {
             Name = Params.Name or "PULSE",
             Icon = Params.Icon or Library.Logo or "layers",
@@ -2531,7 +2618,7 @@ local Library = { } do
 
         Items.TopBar = MakeFrame({
             Parent = Items.Main.Instance,
-            Size = UDim2.fromOffset(W, TopH),
+            Size = UDim2.new(1, 0, 0, TopH),
             Color = "Section",
             Round = 10,
             Z = 2
@@ -2540,7 +2627,7 @@ local Library = { } do
         MakeFrame({
             Parent = Items.TopBar.Instance,
             Pos = UDim2.fromOffset(0, TopH - 12),
-            Size = UDim2.fromOffset(W, 12),
+            Size = UDim2.new(1, 0, 0, 12),
             Color = "Section",
             Z = 2
         })
@@ -2548,7 +2635,7 @@ local Library = { } do
         Items.TopLine = MakeFrame({
             Parent = Items.Main.Instance,
             Pos = UDim2.fromOffset(0, 50),
-            Size = UDim2.fromOffset(W, 1),
+            Size = UDim2.new(1, 0, 0, 1),
             Color = "Element",
             Z = 3
         })
@@ -3151,7 +3238,7 @@ local Library = { } do
         Items.Content = MakeFrame({
             Parent = Items.Main.Instance,
             Pos = UDim2.fromOffset(15, 65),
-            Size = UDim2.fromOffset(W - 30, H - 96),
+            Size = UDim2.new(1, -30, 1, -96),
             Clip = true,
             Z = 2
         })
@@ -3176,7 +3263,7 @@ local Library = { } do
         function Window:LayoutRail()
             local Count = #Window.Tabs
             local NewH = Count > 0 and (50 * Count + 10) or RailH
-            local NewY = math.floor((H - NewH) / 2)
+            local NewY = math.max(0, math.floor((H - NewH) / 2))
 
             Items.Rail.Instance.Size = UDim2.fromOffset(RailW, NewH)
             Items.Rail.Instance.Position = UDim2.fromOffset(0, NewY)
@@ -3212,6 +3299,153 @@ local Library = { } do
         function Window:LayoutSubBar(Instant)
             Window:FitSubBar(Instant)
         end
+
+        function Window:GetSizeLimits()
+            local LScale = Library:GetScreenScale()
+            local Vp = Items.Root.Instance.Parent.AbsoluteSize / LScale
+
+            local MinW = 560
+            local MinH = math.max(400, #Window.Tabs > 0 and (50 * #Window.Tabs + 10) or RailH)
+
+            local MaxW = math.min(1400, math.floor(Vp.X * 0.9) - MainX)
+            local MaxH = math.min(900, math.floor(Vp.Y * 0.9) - math.floor(SubH / 2))
+
+            return MinW, MinH, math.max(MinW, MaxW), math.max(MinH, MaxH)
+        end
+
+        function Window:SetSize(NewW, NewH, Remeasure)
+            if Window.Resizing then return end
+
+            local MinW, MinH, MaxW, MaxH = Window:GetSizeLimits()
+
+            NewW = math.clamp(math.floor(NewW or W), MinW, MaxW)
+            NewH = math.clamp(math.floor(NewH or H), MinH, MaxH)
+
+            if NewW == W and NewH == H and not Remeasure then return end
+
+            Window.Resizing = true
+
+            W = NewW
+            H = NewH
+            Recompute()
+
+            Window.ContentW = W - 30
+            Window.ContentH = H - 96
+            Window.ColW = ColW
+            Window.Col2X = Col2X
+
+            Items.Root.Instance.Size = UDim2.fromOffset(RootW, RootH)
+            Items.Main.Instance.Size = UDim2.fromOffset(W, H)
+
+            Window:LayoutRail()
+
+            local BarW = math.min(Items.SubBar.Instance.Size.X.Offset, MaxSubW)
+
+            Items.SubBar.Instance.Size = UDim2.fromOffset(BarW, SubH)
+            Items.SubBar.Instance.Position = UDim2.fromOffset(
+                SubCenterX - math.floor(BarW / 2),
+                SubY
+            )
+
+            Window:FitSubBar(true)
+
+            for _, Tab in Window.Tabs do
+                for _, Sub in Tab.Subs do
+                    local Page = Sub.Items and Sub.Items.Page
+
+                    if Page then
+                        Page.Instance.Size = UDim2.fromOffset(Window.ContentW, Window.ContentH)
+                    end
+
+                    for _, Column in Sub.Columns do
+                        Column:SetWidth(ColW, Remeasure)
+                    end
+
+                    if Sub.OnResize then
+                        Library:SafeCall(Sub.OnResize, Window.ContentW, Window.ContentH)
+                    end
+                end
+            end
+
+            local PScale = Library:GetScreenScale()
+            local Vp = Items.Root.Instance.Parent.AbsoluteSize / PScale
+            local Pos = Items.Root.Instance.Position
+
+            Items.Root.Instance.Position = UDim2.fromOffset(
+                math.clamp(Pos.X.Offset, 0, math.max(Vp.X - RootW, 0)),
+                math.clamp(Pos.Y.Offset, 0, math.max(Vp.Y - RootH, 0))
+            )
+
+            Window.Resizing = false
+        end
+
+        local Grip = { }
+
+        Items.Grip = MakeFrame({
+            Parent = Items.Main.Instance,
+            Anchor = Vector2.new(1, 1),
+            Pos = UDim2.new(1, -6, 1, -6),
+            Size = UDim2.fromOffset(14, 14),
+            Color = "Element",
+            Round = 7,
+            Z = 15
+        })
+
+        Items.GripDot = MakeFrame({
+            Parent = Items.Grip.Instance,
+            Anchor = Vector2.new(0.5, 0.5),
+            Pos = UDim2.new(0.5, 0, 0.5, 0),
+            Size = UDim2.fromOffset(6, 6),
+            Color = "DimText",
+            Round = 3,
+            Z = 16
+        })
+
+        Items.GripHit = MakeButton({
+            Parent = Items.Main.Instance,
+            Anchor = Vector2.new(1, 1),
+            Pos = UDim2.new(1, -2, 1, -2),
+            Size = UDim2.fromOffset(26, 26),
+            Z = 17
+        })
+
+        Items.GripHit:OnHover(function()
+            Items.GripDot:Tween({ BackgroundColor3 = Library.Theme.Accent })
+        end, function()
+            if Grip.Origin then return end
+            Items.GripDot:Tween({ BackgroundColor3 = Library.Theme.DimText })
+        end)
+
+        AttachDrag(Items.GripHit, {
+            OnGrab = function(Input)
+                Library:CloseAllPopups()
+
+                Grip.Scale = Library:GetScreenScale()
+                Grip.Origin = Input.Position
+                Grip.StartW = W
+                Grip.StartH = H
+
+                Items.GripDot:Tween({ BackgroundColor3 = Library.Theme.Accent })
+            end,
+
+            OnMove = function(Input)
+                if not Grip.Origin then return end
+
+                local GScale = (Grip.Scale > 0 and Grip.Scale) or 1
+
+                Window:SetSize(
+                    Grip.StartW + (Input.Position.X - Grip.Origin.X) / GScale,
+                    Grip.StartH + (Input.Position.Y - Grip.Origin.Y) / GScale
+                )
+            end,
+
+            OnRelease = function()
+                Grip.Origin = nil
+
+                Window:SetSize(W, H, true)
+                Items.GripDot:Tween({ BackgroundColor3 = Library.Theme.DimText })
+            end
+        })
 
         function Window:SetOpen(Bool)
             Window.IsOpen = Bool
@@ -3686,7 +3920,7 @@ local Library = { } do
 
         Items.Page.Instance.Visible = false
 
-        local function MakeColumn(X)
+        local function MakeColumn(Index)
             local Scroll = Library:Create("ScrollingFrame", {
                 Parent = Items.Page.Instance,
                 Name = "\0",
@@ -3695,8 +3929,8 @@ local Library = { } do
                 ScrollBarImageTransparency = 1,
                 Selectable = false,
                 Active = true,
-                Position = UDim2.fromOffset(X, 0),
-                Size = UDim2.fromOffset(ColW, ContentH),
+                Position = UDim2.new(0.5 * (Index - 1), (Index - 1) * 8, 0, 0),
+                Size = UDim2.new(0.5, -8, 1, 0),
                 CanvasSize = UDim2.fromOffset(0, 0),
                 ZIndex = 3,
                 BorderSizePixel = 0
@@ -3709,6 +3943,8 @@ local Library = { } do
             }
 
             function Column:Reflow()
+                if Column.Suppress then return end
+
                 local Y = 0
 
                 for _, Section in Column.Sections do
@@ -3720,11 +3956,23 @@ local Library = { } do
                 Scroll.Instance.CanvasSize = UDim2.fromOffset(0, math.max(Y - 16, 0))
             end
 
+            function Column:SetWidth(NewWidth, Remeasure)
+                Column.Width = NewWidth
+                Column.Suppress = true
+
+                for _, Section in Column.Sections do
+                    Section:SetWidth(NewWidth, Remeasure)
+                end
+
+                Column.Suppress = false
+                Column:Reflow()
+            end
+
             return Column
         end
 
-        SubTab.Columns[1] = MakeColumn(0)
-        SubTab.Columns[2] = MakeColumn(Col2X)
+        SubTab.Columns[1] = MakeColumn(1)
+        SubTab.Columns[2] = MakeColumn(2)
         SubTab.Items = Items
 
         function SubTab:SetVisual(Active, Instant)
@@ -4021,7 +4269,7 @@ local Library = { } do
 
         Items.Holder = MakeFrame({
             Parent = Column.Scroll.Instance,
-            Size = UDim2.fromOffset(Column.Width, 40),
+            Size = UDim2.new(1, 0, 0, 40),
             Z = 3
         })
 
@@ -4074,7 +4322,7 @@ local Library = { } do
         Items.Frame = MakeFrame({
             Parent = Items.Holder.Instance,
             Pos = UDim2.fromOffset(0, 26),
-            Size = UDim2.fromOffset(Column.Width, 14),
+            Size = UDim2.new(1, 0, 0, 14),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -4109,10 +4357,10 @@ local Library = { } do
 
             local FrameHeight = Visible > 0 and (Y + 8) or 0
 
-            Items.Frame.Instance.Size = UDim2.fromOffset(Section.Width, FrameHeight)
+            Items.Frame.Instance.Size = UDim2.new(1, 0, 0, FrameHeight)
             Items.Holder.Instance.Visible = Visible > 0
             Section.Height = Visible > 0 and (26 + FrameHeight) or 0
-            Items.Holder.Instance.Size = UDim2.fromOffset(Section.Width, math.max(Section.Height, 1))
+            Items.Holder.Instance.Size = UDim2.new(1, 0, 0, math.max(Section.Height, 1))
 
             Column:Reflow()
         end
@@ -4120,7 +4368,7 @@ local Library = { } do
         function Section:AddRow(Height, SearchName)
             local Frame = MakeFrame({
                 Parent = Items.Frame.Instance,
-                Size = UDim2.fromOffset(Section.Width, Height),
+                Size = UDim2.new(1, 0, 0, Height),
                 Z = 4
             })
 
@@ -4139,6 +4387,20 @@ local Library = { } do
 
             Section:Reflow()
             return Frame, Data
+        end
+
+        function Section:SetWidth(NewWidth, Remeasure)
+            Section.Width = NewWidth
+
+            if Remeasure then
+                for _, Data in Section.Rows do
+                    if Data.OnWidth then
+                        Library:SafeCall(Data.OnWidth, NewWidth)
+                    end
+                end
+            end
+
+            Section:Reflow()
         end
 
         table.insert(SubTab.Sections, Section)
@@ -4173,7 +4435,7 @@ local Library = { } do
             TextSize = 15,
             Anchor = Vector2.new(0, 0.5),
             Pos = UDim2.new(0, 15, 0.5, 0),
-            Size = UDim2.fromOffset(Section.Width - 80, 20),
+            Size = UDim2.new(1, -80, 0, 20),
             Color = "DimText",
             Truncate = true,
             Z = 5
@@ -4183,9 +4445,9 @@ local Library = { } do
             Parent = Row.Instance,
             Anchor = Vector2.new(1, 0.5),
             Pos = UDim2.new(1, -15, 0.5, 0),
-            Size = UDim2.fromOffset(35, 21),
+            Size = UDim2.fromOffset(38, 22),
             Color = "Element",
-            Round = 10,
+            Round = 6,
             Clip = true,
             Z = 5
         })
@@ -4193,19 +4455,12 @@ local Library = { } do
         Items.Circle = MakeFrame({
             Parent = Items.Box.Instance,
             Anchor = Vector2.new(0, 0.5),
-            Pos = UDim2.new(0, 4, 0.5, 0),
-            Size = UDim2.fromOffset(13, 13),
+            Pos = UDim2.new(0, 3, 0.5, 0),
+            Size = UDim2.fromOffset(16, 16),
             Color = "DimText",
-            Round = 20,
+            Round = 5,
             Z = 6
         })
-
-        MakeAccentShadow(
-            Items.Circle.Instance,
-            UDim2.fromOffset(3, 3),
-            UDim.new(0, 5),
-            0.7
-        )
 
         Items.Hit = MakeButton({
             Parent = Row.Instance,
@@ -4215,11 +4470,11 @@ local Library = { } do
 
         Toggle.Items = Items
 
-        local Pad = 4
-        local InnerW = 35 - Pad * 2
+        local Pad = 3
+        local InnerW = 38 - Pad * 2
         local LeftPos = UDim2.new(0, Pad, 0.5, 0)
         local RightPos = UDim2.new(1, -Pad, 0.5, 0)
-        local Small = UDim2.fromOffset(13, 13)
+        local Small = UDim2.fromOffset(16, 16)
 
         function Toggle.SetVisual(State, Instant)
             State = State and true or false
@@ -4244,8 +4499,8 @@ local Library = { } do
             Toggle.GrowTween = nil
             Toggle.SnapTween = nil
 
-            local BoxColor = State and "Light" or "Element"
-            local CircleKey = State and "Accent" or "DimText"
+            local BoxColor = State and "Accent" or "Element"
+            local CircleKey = State and "Text" or "DimText"
             local CircleColor = Library.Theme[CircleKey]
             local LabelColor = State and "Text" or "DimText"
 
@@ -4278,7 +4533,7 @@ local Library = { } do
 
             Items.Circle.Instance.AnchorPoint = StartAnchor
             Items.Circle.Instance.Position = StartPos
-            Toggle.GrowTween = Library:Tween({ Size = UDim2.fromOffset(InnerW, 13) }, Grow, Items.Circle.Instance)
+            Toggle.GrowTween = Library:Tween({ Size = UDim2.fromOffset(InnerW, 16) }, Grow, Items.Circle.Instance)
 
             task.delay(0.08, function()
                 if Toggle.Token ~= Token then return end
@@ -4317,12 +4572,12 @@ local Library = { } do
             Toggle:Set(not Toggle.Value)
         end)
 
-        Toggle.SlotX = -58
+        Toggle.SlotX = -61
 
         local function TakeSlot(Width)
             local X = Toggle.SlotX
             Toggle.SlotX -= Width + 8
-            Items.Label.Instance.Size = UDim2.fromOffset(Section.Width + Toggle.SlotX - 15, 20)
+            Items.Label.Instance.Size = UDim2.new(1, Toggle.SlotX - 15, 0, 20)
             return X
         end
 
@@ -4778,8 +5033,6 @@ local Library = { } do
 
     local function BuildSliderRow(Section, Name, SearchName)
         local Row = Section:AddRow(44, SearchName or Name)
-        local Width = Section.Width
-        local TrackW = Width - 30
         local Items = { Row = Row }
 
         Items.Label = MakeText({
@@ -4787,7 +5040,7 @@ local Library = { } do
             Text = Name,
             TextSize = 15,
             Pos = UDim2.fromOffset(15, 3),
-            Size = UDim2.fromOffset(Width - 120, 20),
+            Size = UDim2.new(1, -120, 0, 20),
             Color = "Text",
             Truncate = true,
             Z = 5
@@ -4810,7 +5063,7 @@ local Library = { } do
             Parent = Row.Instance,
             Anchor = Vector2.new(0, 0.5),
             Pos = UDim2.new(0, 15, 0, 32),
-            Size = UDim2.fromOffset(TrackW, 10),
+            Size = UDim2.new(1, -30, 0, 10),
             Color = "Element",
             Round = 20,
             Z = 5
@@ -4831,11 +5084,10 @@ local Library = { } do
         Items.Hit = MakeButton({
             Parent = Row.Instance,
             Pos = UDim2.fromOffset(9, 22),
-            Size = UDim2.fromOffset(TrackW + 12, 22),
+            Size = UDim2.new(1, -18, 0, 22),
             Z = 8
         })
 
-        Items.TrackWidth = TrackW
         return Items
     end
 
@@ -4858,7 +5110,6 @@ local Library = { } do
         }
 
         local Items = BuildSliderRow(Section, Slider.Name)
-        local TrackW = Items.TrackWidth
 
         Slider.Items = Items
         Items.Knob = MakeKnob(Items.Track.Instance)
@@ -4875,7 +5126,7 @@ local Library = { } do
             local Fraction = Span == 0 and 0 or (Slider.Value - Slider.Min) / Span
             local Info = Instant and TweenInfo.new(0) or SlideInfo
 
-            Library:Tween({ Size = UDim2.fromOffset(Fraction * TrackW, 10) }, Info, Items.Fill.Instance)
+            Library:Tween({ Size = UDim2.new(Fraction, 0, 0, 10) }, Info, Items.Fill.Instance)
             Library:Tween({ Position = UDim2.new(Fraction, 0, 0.5, 0) }, Info, Items.Knob.Instance)
 
             Items.Value.Instance.Text = tostring(Slider.Value) .. Slider.Suffix
@@ -4939,7 +5190,6 @@ local Library = { } do
         Slider.Default = Slider.Default or { Slider.Min, Slider.Max }
 
         local Items = BuildSliderRow(Section, Slider.Name)
-        local TrackW = Items.TrackWidth
 
         Slider.Items = Items
         Items.MinKnob = MakeKnob(Items.Track.Instance)
@@ -4976,8 +5226,8 @@ local Library = { } do
             local Info = Instant and TweenInfo.new(0) or SlideInfo
 
             Library:Tween({
-                Position = UDim2.fromOffset(MinF * TrackW, 0),
-                Size = UDim2.fromOffset((MaxF - MinF) * TrackW, 10)
+                Position = UDim2.new(MinF, 0, 0, 0),
+                Size = UDim2.new(MaxF - MinF, 0, 0, 10)
             }, Info, Items.Fill.Instance)
 
             Library:Tween({ Position = UDim2.new(MinF, 0, 0.5, 0) }, Info, Items.MinKnob.Instance)
@@ -5040,7 +5290,7 @@ local Library = { } do
             Text = Name,
             TextSize = 15,
             Pos = UDim2.fromOffset(15, 4),
-            Size = UDim2.fromOffset(Section.Width - 30, 18),
+            Size = UDim2.new(1, -30, 0, 18),
             Color = "DimText",
             Truncate = true,
             Z = 5
@@ -5049,7 +5299,7 @@ local Library = { } do
         Items.Box = MakeFrame({
             Parent = Row.Instance,
             Pos = UDim2.fromOffset(15, 24),
-            Size = UDim2.fromOffset(Section.Width - 30, 30),
+            Size = UDim2.new(1, -30, 0, 30),
             Color = "Element",
             Round = 6,
             Clip = true,
@@ -5285,7 +5535,7 @@ local Library = { } do
         Items.Frame = MakeFrame({
             Parent = Row.Instance,
             Pos = UDim2.fromOffset(15, 3),
-            Size = UDim2.fromOffset(Section.Width - 30, 30),
+            Size = UDim2.new(1, -30, 0, 30),
             Color = "Element",
             Round = 6,
             Clip = true,
@@ -5423,7 +5673,7 @@ local Library = { } do
             TextSize = 15,
             Anchor = Vector2.new(0, 0.5),
             Pos = UDim2.new(0, 14, 0.5, 0),
-            Size = UDim2.fromOffset(Section.Width - 60, 20),
+            Size = UDim2.new(1, -60, 0, 20),
             Color = "Text",
             Truncate = true,
             Z = 5
@@ -5591,7 +5841,7 @@ local Library = { } do
             TextSize = 15,
             Anchor = Vector2.new(0, 0.5),
             Pos = UDim2.new(0, 14, 0.5, 0),
-            Size = UDim2.fromOffset(Section.Width - 60, 20),
+            Size = UDim2.new(1, -60, 0, 20),
             Color = "Text",
             Truncate = true,
             Z = 5
@@ -5658,7 +5908,7 @@ local Library = { } do
             TextSize = 15,
             Anchor = Vector2.new(0, 0.5),
             Pos = UDim2.new(0, 14, 0.5, 0),
-            Size = UDim2.fromOffset(Section.Width - 28, 20),
+            Size = UDim2.new(1, -28, 0, 20),
             Color = "DimText",
             Truncate = true,
             Z = 5
@@ -5687,7 +5937,7 @@ local Library = { } do
         local BodyBounds = MeasureText(Paragraph.Content, 14, Width, UiFont)
         local Total = TitleBounds.Y + BodyBounds.Y + 16
 
-        local Row = Section:AddRow(Total, Paragraph.Title .. " " .. Paragraph.Content)
+        local Row, Data = Section:AddRow(Total, Paragraph.Title .. " " .. Paragraph.Content)
 
         local function Block(Text, TextSize, Y, Height, Color)
             local Item = MakeText({
@@ -5695,7 +5945,7 @@ local Library = { } do
                 Text = Text,
                 TextSize = TextSize,
                 Pos = UDim2.fromOffset(14, Y),
-                Size = UDim2.fromOffset(Width, Height),
+                Size = UDim2.new(1, -28, 0, Height),
                 Color = Color,
                 Wrap = true,
                 Z = 5
@@ -5708,12 +5958,35 @@ local Library = { } do
         Paragraph.Items.Title = Block(Paragraph.Title, 15, 6, TitleBounds.Y, "Text")
         Paragraph.Items.Body = Block(Paragraph.Content, 14, TitleBounds.Y + 8, BodyBounds.Y, "DimText")
 
+        local function Remeasure(NewWidth)
+            local Wrap = (NewWidth or Section.Width) - 28
+            local Title = MeasureText(Paragraph.Title, 15, Wrap, UiFont)
+            local Body = MeasureText(Paragraph.Content, 14, Wrap, UiFont)
+            local Height = Title.Y + Body.Y + 16
+
+            Paragraph.Items.Title.Instance.Position = UDim2.fromOffset(14, 6)
+            Paragraph.Items.Title.Instance.Size = UDim2.new(1, -28, 0, Title.Y)
+            Paragraph.Items.Body.Instance.Position = UDim2.fromOffset(14, Title.Y + 8)
+            Paragraph.Items.Body.Instance.Size = UDim2.new(1, -28, 0, Body.Y)
+
+            Data.Height = Height
+            Row.Instance.Size = UDim2.new(1, 0, 0, Height)
+
+            if Section.Reflow then Section:Reflow() end
+        end
+
+        Data.OnWidth = Remeasure
+
         function Paragraph:SetTitle(Text)
-            Paragraph.Items.Title.Instance.Text = tostring(Text)
+            Paragraph.Title = tostring(Text)
+            Paragraph.Items.Title.Instance.Text = Paragraph.Title
+            Remeasure(Section.Width)
         end
 
         function Paragraph:SetContent(Text)
-            Paragraph.Items.Body.Instance.Text = tostring(Text)
+            Paragraph.Content = tostring(Text)
+            Paragraph.Items.Body.Instance.Text = Paragraph.Content
+            Remeasure(Section.Width)
         end
 
         return setmetatable(Paragraph, Library)
@@ -5748,13 +6021,13 @@ local Library = { } do
         Items.CreateBox = MakeFrame({
             Parent = Page.Instance,
             Pos = UDim2.fromOffset(0, 0),
-            Size = UDim2.fromOffset(ColW, 40),
+            Size = UDim2.new(0.5, -8, 0, 40),
             Z = 3
         })
 
         Items.NameBox = MakeFrame({
             Parent = Items.CreateBox.Instance,
-            Size = UDim2.fromOffset(ColW - 94, 40),
+            Size = UDim2.new(1, -94, 0, 40),
             Color = "Element",
             Round = 6,
             Clip = true,
@@ -5812,7 +6085,7 @@ local Library = { } do
         Items.ListHolder = MakeFrame({
             Parent = Page.Instance,
             Pos = UDim2.fromOffset(0, 52),
-            Size = UDim2.fromOffset(ColW, ContentH - 52),
+            Size = UDim2.new(0.5, -8, 1, -52),
             Z = 3
         })
 
@@ -5838,8 +6111,8 @@ local Library = { } do
 
         Items.InfoPanel = MakeFrame({
             Parent = Page.Instance,
-            Pos = UDim2.fromOffset(Col2X, 0),
-            Size = UDim2.fromOffset(ColW, 204),
+            Pos = UDim2.new(0.5, 8, 0, 0),
+            Size = UDim2.new(0.5, -8, 0, 204),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -5850,7 +6123,7 @@ local Library = { } do
             Text = "Config info",
             TextSize = 15,
             Pos = UDim2.fromOffset(14, 12),
-            Size = UDim2.fromOffset(ColW - 28, 20),
+            Size = UDim2.new(1, -28, 0, 20),
             Color = "Text",
             Z = 4
         })
@@ -5874,7 +6147,7 @@ local Library = { } do
                 Text = Label,
                 TextSize = 15,
                 Pos = UDim2.fromOffset(36, Y),
-                Size = UDim2.fromOffset(ColW - 170, 20),
+                Size = UDim2.new(1, -170, 0, 20),
                 Color = "DimText",
                 Z = 4
             })
@@ -5896,7 +6169,7 @@ local Library = { } do
                 MakeFrame({
                     Parent = Items.InfoPanel.Instance,
                     Pos = UDim2.fromOffset(14, Y + 27),
-                    Size = UDim2.fromOffset(ColW - 28, 1),
+                    Size = UDim2.new(1, -28, 0, 1),
                     Color = "Element",
                     Z = 4
                 })
@@ -5945,8 +6218,8 @@ local Library = { } do
 
         Items.ThemePanel = MakeFrame({
             Parent = Page.Instance,
-            Pos = UDim2.fromOffset(Col2X, 216),
-            Size = UDim2.fromOffset(ColW, 194),
+            Pos = UDim2.new(0.5, 8, 0, 216),
+            Size = UDim2.new(0.5, -8, 0, 194),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -5957,7 +6230,7 @@ local Library = { } do
             Text = "Theme",
             TextSize = 15,
             Pos = UDim2.fromOffset(14, 8),
-            Size = UDim2.fromOffset(ColW - 28, 20),
+            Size = UDim2.new(1, -28, 0, 20),
             Color = "Text",
             Z = 4
         })
@@ -6034,7 +6307,7 @@ local Library = { } do
             local CellX = 14 + ((Index - 1) % 2) * (CellW + 14)
             local CellY = 66 + math.floor((Index - 1) / 2) * 30
 
-            MakeText({
+            local Label = MakeText({
                 Parent = Items.ThemePanel.Instance,
                 Text = Entry[2],
                 TextSize = 15,
@@ -6063,9 +6336,27 @@ local Library = { } do
 
             table.insert(ThemeCellList, {
                 Key = Key,
+                Label = Label,
                 Swatch = Swatch,
                 Picker = CellPicker
             })
+        end
+
+        local function LayoutCells(NewColW)
+            CellW = math.floor((NewColW - 42) / 2)
+
+            for Index, Cell in ThemeCellList do
+                local CellX = 14 + ((Index - 1) % 2) * (CellW + 14)
+                local CellY = 66 + math.floor((Index - 1) / 2) * 30
+
+                Cell.Label.Instance.Position = UDim2.fromOffset(CellX, CellY)
+                Cell.Label.Instance.Size = UDim2.fromOffset(CellW - 28, 20)
+                Cell.Swatch.Halo.Instance.Position = UDim2.fromOffset(CellX + CellW - 22, CellY - 1)
+            end
+        end
+
+        SubTab.OnResize = function()
+            LayoutCells(Window.ColW)
         end
 
         MakeText({
@@ -6073,7 +6364,7 @@ local Library = { } do
             Text = "Accent",
             TextSize = 15,
             Pos = UDim2.fromOffset(14, 160),
-            Size = UDim2.fromOffset(ColW - 60, 20),
+            Size = UDim2.new(1, -60, 0, 20),
             Color = "DimText",
             Truncate = true,
             Z = 4
@@ -6109,7 +6400,7 @@ local Library = { } do
         local function AddRow(Index, Name)
             local Slot = MakeFrame({
                 Parent = Items.List.Instance,
-                Size = UDim2.fromOffset(ColW, 44),
+                Size = UDim2.new(1, 0, 0, 44),
                 Clip = true,
                 Z = 4
             })
@@ -6118,7 +6409,7 @@ local Library = { } do
 
             local Row = MakeFrame({
                 Parent = Slot.Instance,
-                Size = UDim2.fromOffset(ColW, 44),
+                Size = UDim2.new(1, 0, 0, 44),
                 Color = "Section",
                 Round = 8,
                 Z = 4
@@ -6151,7 +6442,7 @@ local Library = { } do
                 TextSize = 15,
                 Anchor = Vector2.new(0, 0.5),
                 Pos = UDim2.new(0, 15, 0.5, 0),
-                Size = UDim2.fromOffset(ColW - 130, 20),
+                Size = UDim2.new(1, -130, 0, 20),
                 Color = "DimText",
                 Truncate = true,
                 Z = 5
@@ -6240,7 +6531,7 @@ local Library = { } do
 
                 local Sink = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-                Library:Tween({ Size = UDim2.fromOffset(ColW, 0) }, Sink, Slot.Instance)
+                Library:Tween({ Size = UDim2.new(1, 0, 0, 0) }, Sink, Slot.Instance)
                 Row:FadeDescendants(false)
 
                 Library:Notification({
@@ -6358,8 +6649,8 @@ local Library = { } do
         local Blocks = {
             { Frame = Items.CreateBox, Home = UDim2.fromOffset(0, 0) },
             { Frame = Items.ListHolder, Home = UDim2.fromOffset(0, 52) },
-            { Frame = Items.InfoPanel, Home = UDim2.fromOffset(Col2X, 0) },
-            { Frame = Items.ThemePanel, Home = UDim2.fromOffset(Col2X, 216) }
+            { Frame = Items.InfoPanel, Home = UDim2.new(0.5, 8, 0, 0) },
+            { Frame = Items.ThemePanel, Home = UDim2.new(0.5, 8, 0, 216) }
         }
 
         local BlockSlide = 30
@@ -6428,6 +6719,7 @@ local Library = { } do
         end
 
         local Icon = Params.Icon or (Self and Self.Icon) or Library.Logo or "layers"
+        local Title = Params.Name or Params.Title or LocalPlayer.DisplayName
         local Items = { }
         local Order = 0
 
@@ -6484,13 +6776,13 @@ local Library = { } do
             Sep.Instance.LayoutOrder = NextOrder()
         end
 
-        local function Stat(Text)
+        local function Stat(Text, ColorKey)
             local Label = MakeText({
                 Parent = Items.Bar.Instance,
                 Text = Text,
                 TextSize = 14,
                 Size = UDim2.fromOffset(0, 16),
-                Color = "DimText",
+                Color = ColorKey or "DimText",
                 Z = 61
             })
 
@@ -6500,24 +6792,79 @@ local Library = { } do
             return Label
         end
 
-        Separator()
-        local GameStat = Stat("...")
-        Separator()
-        local FpsStat = Stat("0 fps")
-        Separator()
-        local PingStat = Stat("0 ms")
-        Separator()
-        local TimeStat = Stat(os.date("%I:%M %p"))
+        local Good = Color3.fromRGB(96, 216, 148)
+        local Fair = Color3.fromRGB(232, 190, 92)
+        local Poor = Color3.fromRGB(232, 100, 100)
 
-        Library:Thread(function()
-            local Ok, Info = pcall(function()
-                return MarketplaceService:GetProductInfo(game.PlaceId)
-            end)
+        local function Grade(Value, GoodAt, FairAt, Lower)
+            if Lower then
+                return (Value <= GoodAt and Good) or (Value <= FairAt and Fair) or Poor
+            end
 
-            GameStat.Instance.Text = (Ok and Info and Info.Name) or "Unknown"
-        end)
+            return (Value >= GoodAt and Good) or (Value >= FairAt and Fair) or Poor
+        end
+
+        local function Reading(Value, Unit, Color)
+            return ("<font color=\"#%s\">%d</font> %s"):format(Color:ToHex(), Value, Unit)
+        end
+
+        local function StatGroup(Glyph)
+            local Holder = MakeFrame({
+                Parent = Items.Bar.Instance,
+                Size = UDim2.fromOffset(0, 18),
+                Z = 61
+            })
+
+            Holder.Instance.AutomaticSize = Enum.AutomaticSize.X
+            Holder.Instance.LayoutOrder = NextOrder()
+
+            Library:Create("UIListLayout", {
+                Parent = Holder.Instance,
+                FillDirection = Enum.FillDirection.Horizontal,
+                VerticalAlignment = Enum.VerticalAlignment.Center,
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Padding = UDim.new(0, 5)
+            })
+
+            local Image = MakeImage({
+                Parent = Holder.Instance,
+                Icon = Glyph,
+                Size = UDim2.fromOffset(14, 14),
+                Raw = Library.Theme.DimIcon,
+                Fit = true,
+                Z = 61
+            })
+
+            Image.Instance.LayoutOrder = 1
+
+            local Label = MakeText({
+                Parent = Holder.Instance,
+                Text = "",
+                TextSize = 14,
+                Size = UDim2.fromOffset(0, 16),
+                Color = "DimText",
+                Z = 61
+            })
+
+            Label.Instance.AutomaticSize = Enum.AutomaticSize.X
+            Label.Instance.RichText = true
+            Label.Instance.LayoutOrder = 2
+
+            return Label, Image
+        end
+
+        Separator()
+        local NameStat = Stat(Title, "Text")
+        Separator()
+        local FpsStat, FpsGlyph = StatGroup("gravity:speedometer")
+        Separator()
+        local PingStat, PingGlyph = StatGroup("gravity:signal")
+
+        FpsStat.Instance.Text = Reading(0, "fps", Good)
+        PingStat.Instance.Text = Reading(0, "ms", Good)
 
         local Frames = 0
+        local Since = os.clock()
 
         Library:Connect(RunService.RenderStepped, function()
             Frames += 1
@@ -6527,18 +6874,34 @@ local Library = { } do
             while task.wait(0.5) do
                 if not Items.Bar.Instance.Parent then break end
 
-                FpsStat.Instance.Text = tostring(Frames * 2) .. " fps"
-                Frames = 0
+                local Now = os.clock()
+                local Span = Now - Since
+                local Fps = (Span > 0 and math.floor(Frames / Span + 0.5)) or 0
+
+                Frames, Since = 0, Now
+
+                local FpsColor = Grade(Fps, 50, 30)
+
+                FpsStat.Instance.Text = Reading(Fps, "fps", FpsColor)
+                FpsGlyph.Instance.ImageColor3 = FpsColor
 
                 local Ping = 0
 
                 pcall(function()
-                    local Stat = StatsService.Network.ServerStatsItem["Data Ping"]
-                    Ping = math.floor(Stat:GetValue())
+                    Ping = math.floor(LocalPlayer:GetNetworkPing() * 1000 + 0.5)
                 end)
 
-                PingStat.Instance.Text = tostring(Ping) .. " ms"
-                TimeStat.Instance.Text = os.date("%I:%M %p")
+                if Ping <= 0 then
+                    pcall(function()
+                        local Stat = StatsService.Network.ServerStatsItem["Data Ping"]
+                        Ping = math.floor(Stat:GetValue())
+                    end)
+                end
+
+                local PingColor = Grade(Ping, 110, 220, true)
+
+                PingStat.Instance.Text = Reading(Ping, "ms", PingColor)
+                PingGlyph.Instance.ImageColor3 = PingColor
             end
         end)
 
@@ -6589,7 +6952,8 @@ local Library = { } do
             ApplyIcon(Items.Icon.Instance, NewIcon)
         end
 
-        function Watermark:SetName()
+        function Watermark:SetName(Text)
+            NameStat.Instance.Text = tostring(Text or "")
         end
 
         function Watermark:SetTarget(Window)
