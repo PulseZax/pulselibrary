@@ -1,4 +1,4 @@
---v0.13
+v0.131
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -631,12 +631,22 @@ local Library = { } do
     end
 
     Library.Round = function(Self, Number, Float)
-        Float = Float or 1
+        if type(Number) ~= "number" or Number ~= Number then
+            Number = 0
+        end
+
+        if type(Float) ~= "number" or Float ~= Float or Float <= 0 or Float == math.huge then
+            Float = 1
+        end
 
         local Result = math.floor(Number / Float + 0.5) * Float
-        local Places = math.max(0, math.ceil(-math.log(Float, 10)))
+        local Places = 0
 
-        return tonumber(string.format("%." .. Places .. "f", Result))
+        if Float < 1 then
+            Places = math.clamp(math.ceil(-math.log(Float, 10)), 0, 10)
+        end
+
+        return tonumber(string.format("%." .. Places .. "f", Result)) or Result
     end
 
     Library.Tween = function(Self, Properties, Info, RawItem)
