@@ -666,6 +666,9 @@ local Library = { } do
     Library.ThemingStuff = { }
     Library.ThemeMap = { }
     Library.AccentGradients = { }
+    Library.SurfaceGradients = { }
+    Library.SurfaceTilt = 0.34
+    Library.Gradients = false
     Library.AccentShadows = { }
     Library.OpenFrames = { }
     Library.Windows = { }
@@ -1073,10 +1076,35 @@ local Library = { } do
         Library.ThemeMap[Object].Properties = Properties
     end
 
+    local function SurfaceSequence(Strength)
+        local Power = Strength or 1
+        local Base = Library.Theme.Background
+        local Tail = Library.Theme.Accent2
+
+        if not Library.Gradients then
+            return ColorSequence.new(Base)
+        end
+
+        if typeof(Tail) ~= "Color3" then Tail = Library.Theme.Accent end
+
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Base:Lerp(Library.Theme.Accent, Library.SurfaceTilt * Power)),
+            ColorSequenceKeypoint.new(0.42, Base),
+            ColorSequenceKeypoint.new(0.72, Base:Lerp(Color3.new(0, 0, 0), 0.3 * Power)),
+            ColorSequenceKeypoint.new(1, Base:Lerp(Tail, 0.22 * Power)
+                :Lerp(Color3.new(0, 0, 0), 0.24 * Power)),
+        })
+    end
+
+    Library.RegisterSurface = function(Self, Gradient, Strength)
+        Gradient.Color = SurfaceSequence(Strength)
+        table.insert(Library.SurfaceGradients, { At = Gradient, Strength = Strength or 1 })
+    end
+
     local function AccentSequence()
         local Tail = Library.Theme.Accent2
 
-        if typeof(Tail) ~= "Color3" then
+        if not Library.Gradients or typeof(Tail) ~= "Color3" then
             Tail = Library.Theme.AccentDark
         end
 
@@ -1106,11 +1134,70 @@ local Library = { } do
             Gradient.Color = AccentSequence()
         end
 
+        for _, Skin in Library.SurfaceGradients do
+            pcall(function() Skin.At.Color = SurfaceSequence(Skin.Strength) end)
+        end
+
         for _, Shadow in Library.AccentShadows do
             pcall(function()
                 Shadow.Color = Library.Theme.Accent
             end)
         end
+    end
+
+    Library.SetGradients = function(Self, State)
+        Library.Gradients = State and true or false
+        Library.ThemeDirty = true
+
+        pcall(function() Library:ApplyThemeInstant() end)
+        if Library.GradientsChanged then pcall(Library.GradientsChanged) end
+
+        return Library.Gradients
+    end
+
+    Library.RowOf = function(Self, Element)
+        if type(Element) ~= "table" then return nil end
+
+        if type(Element.RowData) == "table" then return Element.RowData end
+
+        local Items = Element.Items
+        if type(Items) ~= "table" then return nil end
+
+        if type(Items.RowData) == "table" then return Items.RowData end
+        if type(Items.Row) == "table" and type(Items.Row.RowData) == "table" then
+            return Items.Row.RowData
+        end
+
+        return nil
+    end
+
+    Library.SetElementVisible = function(Self, Element, State)
+        local Data = Library:RowOf(Element)
+        if not Data then return false end
+
+        local Want = State and true or false
+        if Data.Visible == Want then return true end
+
+        Data.Visible = Want
+
+        if Data.Section and Data.Section.Reflow then
+            pcall(function() Data.Section:Reflow() end)
+        end
+
+        return true
+    end
+
+    Library.OnAccent = function(Self, Colour)
+        local C = Colour or Library.Theme.Accent
+        if typeof(C) ~= "Color3" then return Library.Theme.Text end
+
+        local Lum = C.R * 0.299 + C.G * 0.587 + C.B * 0.114
+
+        if Lum > 0.62 then
+            return Library.Theme.Background:Lerp(Color3.new(0, 0, 0), 0.35)
+        end
+
+        return Library.Theme.Text
     end
 
     Library.SetAccent = function(Self, Color)
@@ -2834,6 +2921,21 @@ local Library = { } do
             Z = 1
         })
 
+        Items.MainSkin = MakeFrame({
+            Parent = Items.Main.Instance,
+            Size = UDim2.fromScale(1, 1),
+            Raw = Color3.new(1, 1, 1),
+            Round = 10,
+            Z = 1
+        })
+
+        Items.MainSkin.Instance.Active = false
+
+        Library:RegisterSurface(Library:Create("UIGradient", {
+            Parent = Items.MainSkin.Instance,
+            Rotation = 90
+        }).Instance, 1)
+
         Items.Rail = MakeFrame({
             Parent = Items.Root.Instance,
             Pos = UDim2.fromOffset(0, RailY),
@@ -2842,6 +2944,21 @@ local Library = { } do
             Round = 10,
             Z = 1
         })
+
+        Items.RailSkin = MakeFrame({
+            Parent = Items.Rail.Instance,
+            Size = UDim2.fromScale(1, 1),
+            Raw = Color3.new(1, 1, 1),
+            Round = 10,
+            Z = 1
+        })
+
+        Items.RailSkin.Instance.Active = false
+
+        Library:RegisterSurface(Library:Create("UIGradient", {
+            Parent = Items.RailSkin.Instance,
+            Rotation = 90
+        }).Instance, 0.7)
 
         Items.SubBar = MakeFrame({
             Parent = Items.Root.Instance,
@@ -4822,6 +4939,8 @@ local Library = { } do
                 Window = SubTab.Window
             }
 
+            Frame.RowData = Data
+
             table.insert(Section.Rows, Data)
             table.insert(Library.Searchables, Data)
 
@@ -4941,7 +5060,7 @@ local Library = { } do
 
             local BoxColor = State and "Accent" or "Element"
             local CircleKey = State and "Text" or "DimText"
-            local CircleColor = Library.Theme[CircleKey]
+            local CircleColor = State and Library:OnAccent() or Library.Theme[CircleKey]
             local LabelColor = State and "Text" or "DimText"
 
             local StartAnchor = State and Vector2.new(0, 0.5) or Vector2.new(1, 0.5)
@@ -4951,7 +5070,11 @@ local Library = { } do
 
             Items.Box:ChangeItemTheme({ BackgroundColor3 = BoxColor })
             Items.Label:ChangeItemTheme({ TextColor3 = LabelColor })
-            Items.Circle:ChangeItemTheme({ BackgroundColor3 = CircleKey })
+            Items.Circle:ChangeItemTheme({
+                BackgroundColor3 = State
+                    and function() return Library:OnAccent() end
+                    or CircleKey
+            })
 
             if Instant then
                 Items.Box.Instance.BackgroundColor3 = Library.Theme[BoxColor]
@@ -7910,7 +8033,7 @@ local Library = { } do
                 Parent = Items.ThemePanel.Instance,
                 Pos = UDim2.fromOffset(14 + Col * 26, 58 + Row * 26),
                 Size = UDim2.fromOffset(20, 20),
-                Raw = Preset.Swatch or Preset.Accent,
+                Raw = Color3.new(1, 1, 1),
                 Round = 20,
                 Z = 4
             })
@@ -8034,11 +8157,14 @@ local Library = { } do
             Library:CloseAllPopups()
         end)
 
+        local AccentY = CellTop + math.ceil(#ThemeCells / 2) * 30 + 8
+        local GradY = AccentY + 32
+
         MakeText({
             Parent = Items.ThemePanel.Instance,
             Text = "Accent",
             TextSize = 15,
-            Pos = UDim2.fromOffset(14, 160),
+            Pos = UDim2.fromOffset(14, AccentY),
             Size = UDim2.new(1, -60, 0, 20),
             Color = "DimText",
             Truncate = true,
@@ -8047,7 +8173,67 @@ local Library = { } do
 
         Items.Swatch = MakeSwatch(Items.ThemePanel.Instance, -14, Library.Theme.Accent, 4)
         Items.Swatch.Halo.Instance.AnchorPoint = Vector2.new(1, 0.5)
-        Items.Swatch.Halo.Instance.Position = UDim2.new(1, -14, 0, 170)
+        Items.Swatch.Halo.Instance.Position = UDim2.new(1, -14, 0, AccentY + 10)
+
+        MakeText({
+            Parent = Items.ThemePanel.Instance,
+            Text = "Gradients",
+            TextSize = 15,
+            Pos = UDim2.fromOffset(14, GradY),
+            Size = UDim2.new(1, -110, 0, 20),
+            Color = "DimText",
+            Truncate = true,
+            Z = 4
+        })
+
+        Items.GradBox = MakeFrame({
+            Parent = Items.ThemePanel.Instance,
+            Anchor = Vector2.new(1, 0),
+            Pos = UDim2.new(1, -14, 0, GradY - 3),
+            Size = UDim2.fromOffset(74, 26),
+            Color = "Element",
+            Round = 6,
+            Clip = true,
+            Z = 4
+        })
+
+        HoverSwap(Items.GradBox)
+        Items.GradSweep = MakeSweep(Items.GradBox.Instance, 5)
+
+        Items.GradText = MakeText({
+            Parent = Items.GradBox.Instance,
+            Text = "off",
+            TextSize = 15,
+            Size = UDim2.new(1, 0, 1, 0),
+            Color = "Text",
+            Align = Enum.TextXAlignment.Center,
+            Z = 6
+        })
+
+        Items.GradHit = MakeButton({
+            Parent = Items.GradBox.Instance,
+            Z = 7
+        })
+
+        local function PaintGradients()
+            Items.GradText.Instance.Text = Library.Gradients and "on" or "off"
+        end
+
+        PaintGradients()
+        Library.GradientsChanged = PaintGradients
+
+        Items.GradHit:Connect("MouseButton1Down", function()
+            PlaySweep(Items.GradSweep.Instance)
+            Library:SetGradients(not Library.Gradients)
+            PaintGradients()
+        end)
+
+        do
+            local Tall = GradY + 34
+            Items.ThemePanel.Instance.Size = UDim2.new(1, 0, 0, Tall)
+            Items.SavePanel.Instance.Position = UDim2.fromOffset(
+                0, Items.ThemePanel.Instance.Position.Y.Offset + Tall + 10)
+        end
 
         local Picker = MakeColorPopup(function()
             return Items.Swatch.Halo.Instance
@@ -8335,8 +8521,8 @@ local Library = { } do
             { Frame = Items.CreateBox, Home = UDim2.fromOffset(0, 0) },
             { Frame = Items.ListHolder, Home = UDim2.fromOffset(0, 52) },
             { Frame = Items.InfoPanel, Home = UDim2.fromOffset(0, 0) },
-            { Frame = Items.ThemePanel, Home = UDim2.fromOffset(0, 216) },
-            { Frame = Items.SavePanel, Home = UDim2.fromOffset(0, 420) }
+            { Frame = Items.ThemePanel, Home = Items.ThemePanel.Instance.Position },
+            { Frame = Items.SavePanel, Home = Items.SavePanel.Instance.Position }
         }
 
         local BlockSlide = 30
@@ -8690,6 +8876,7 @@ local Library = { } do
         end
 
         Config.__ui = {
+            gradients = Library.Gradients,
             scale = Library.UserScale,
             key = Library.MenuKeybind and Library.MenuKeybind.Name or nil,
             windows = Layout,
@@ -8741,6 +8928,10 @@ local Library = { } do
 
         if type(Decoded.__ui) == "table" then
             local UI = Decoded.__ui
+
+            if type(UI.gradients) == "boolean" then
+                pcall(function() Library:SetGradients(UI.gradients) end)
+            end
 
             local Scale = tonumber(UI.scale)
             if Scale then
