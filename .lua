@@ -1,4 +1,4 @@
---v0.146
+--v0.147
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -1102,6 +1102,12 @@ local Library = { } do
     end
 
     Library.Unload = function(Self)
+        if Library.OnUnload then
+            local Handler = Library.OnUnload
+            Library.OnUnload = nil
+            pcall(Handler)
+        end
+
         for _, Connection in Library.Connections do
             pcall(function()
                 Connection:Disconnect()
@@ -1928,6 +1934,31 @@ local Library = { } do
         end
 
         function Popup:Clear()
+            local Doomed = { }
+
+            for _, Data in Popup.Order do
+                Doomed[Data.Row.Instance] = true
+
+                for _, Child in Data.Row.Instance:GetDescendants() do
+                    Doomed[Child] = true
+                end
+            end
+
+            for Index = #Library.ThemingStuff, 1, -1 do
+                local Item = Library.ThemingStuff[Index].Item
+
+                if Doomed[Item] then
+                    Library.ThemeMap[Item] = nil
+                    table.remove(Library.ThemingStuff, Index)
+                end
+            end
+
+            for Index = #Library.AccentShadows, 1, -1 do
+                if Doomed[Library.AccentShadows[Index]] then
+                    table.remove(Library.AccentShadows, Index)
+                end
+            end
+
             for _, Data in Popup.Order do
                 Data.Row.Instance:Destroy()
             end
@@ -3032,6 +3063,16 @@ local Library = { } do
             ScaleKnob.Instance.Position = UDim2.new(Normal, 0, 0.5, 0)
         end
 
+        Library.PaintScale = function(Percent)
+            ScalePercent = math.clamp(Library:Round(Percent, 5), 50, 150)
+
+            local Normal = (ScalePercent - 50) / 100
+
+            ScaleValue.Instance.Text = tostring(ScalePercent) .. "%"
+            ScaleFill.Instance.Size = UDim2.new(Normal, 0, 1, 0)
+            ScaleKnob.Instance.Position = UDim2.new(Normal, 0, 0.5, 0)
+        end
+
         ScaleHit:Connect("InputBegan", function(Input)
             local IsClick = Input.UserInputType == Enum.UserInputType.MouseButton1
             local IsTouch = Input.UserInputType == Enum.UserInputType.Touch
@@ -3143,6 +3184,10 @@ local Library = { } do
             Z = 48
         })
 
+        Library.PaintKeybind = function()
+            KeyText.Instance.Text = KeyName(Library.MenuKeybind)
+        end
+
         local KeyBoxHit = MakeButton({
             Parent = KeyBox.Instance,
             Z = 49
@@ -3193,7 +3238,7 @@ local Library = { } do
 
             local Connection
 
-            Connection = UserInputService.InputBegan:Connect(function(Input)
+            Connection = Library:Connect(UserInputService.InputBegan, function(Input)
                 if Input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
                 Connection:Disconnect()
@@ -5717,10 +5762,16 @@ local Library = { } do
             if Dropdown.Multi then
                 if type(Value) ~= "table" then return end
 
-                Dropdown.Value = Value
+                local Picked = { }
+
+                for _, Entry in Value do
+                    table.insert(Picked, Entry)
+                end
+
+                Dropdown.Value = Picked
 
                 for _, Data in Popup.Order do
-                    Data:Set(table.find(Value, Data.Name) ~= nil, true)
+                    Data:Set(table.find(Picked, Data.Name) ~= nil, true)
                 end
             else
                 local Found = false
@@ -7545,7 +7596,7 @@ local Library = { } do
         Items.SavePanel = MakeFrame({
             Parent = Items.RightScroll.Instance,
             Pos = UDim2.fromOffset(0, 420),
-            Size = UDim2.new(1, 0, 0, 76),
+            Size = UDim2.new(1, 0, 0, 142),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -7600,6 +7651,70 @@ local Library = { } do
             PlaySweep(Items.AutoSweep.Instance)
             Library:SetAutoSave(not Library.AutoSave)
             PaintAutoSave()
+        end)
+
+        MakeText({
+            Parent = Items.SavePanel.Instance,
+            Text = "Load on execute",
+            TextSize = 15,
+            Pos = UDim2.fromOffset(14, 76),
+            Size = UDim2.new(1, -28, 0, 20),
+            Color = "Text",
+            Z = 4
+        })
+
+        Items.LoadBox = MakeFrame({
+            Parent = Items.SavePanel.Instance,
+            Pos = UDim2.fromOffset(14, 102),
+            Size = UDim2.new(1, -28, 0, 28),
+            Color = "Element",
+            Round = 6,
+            Clip = true,
+            Z = 4
+        })
+
+        HoverSwap(Items.LoadBox)
+        Items.LoadSweep = MakeSweep(Items.LoadBox.Instance, 5)
+
+        Items.LoadText = MakeText({
+            Parent = Items.LoadBox.Instance,
+            Text = "off",
+            TextSize = 15,
+            Size = UDim2.new(1, 0, 1, 0),
+            Color = "Text",
+            Align = Enum.TextXAlignment.Center,
+            Truncate = true,
+            Z = 6
+        })
+
+        Items.LoadHit = MakeButton({
+            Parent = Items.LoadBox.Instance,
+            Z = 7
+        })
+
+        local function PaintAutoLoad()
+            Items.LoadText.Instance.Text = Library.AutoLoadName or "off"
+        end
+
+        PaintAutoLoad()
+        Library.AutoLoadChanged = PaintAutoLoad
+
+        Items.LoadHit:Connect("MouseButton1Down", function()
+            PlaySweep(Items.LoadSweep.Instance)
+
+            if Library.AutoLoadName then
+                Library:SetAutoLoad(nil)
+            elseif Config.Selected then
+                Library:SetAutoLoad(Config.Selected)
+            else
+                Library:Notification({
+                    Name = "Pick a config first",
+                    Description = "Select one on the left, then press this again.",
+                    Icon = "download"
+                })
+            end
+
+            PaintAutoLoad()
         end)
 
         MakeText({
@@ -8023,6 +8138,16 @@ local Library = { } do
                 return
             end
 
+            if not writefile then
+                Library:Notification({
+                    Name = "No file access",
+                    Description = "This executor has no writefile, configs cannot be saved.",
+                    Icon = "triangle-alert"
+                })
+
+                return
+            end
+
             writefile(ConfigPath(Name), Library:GetConfig())
             Items.NameInput.Instance.Text = ""
             Config.Selected = Name
@@ -8375,6 +8500,28 @@ local Library = { } do
             ThemeColors[Key] = Library.Theme[Key]:ToHex()
         end
 
+        local Layout = { }
+
+        for Index, Window in Library.Windows do
+            local Root = Window.Items and Window.Items.Root
+            local Main = Window.Items and Window.Items.Main
+
+            if Root and Main then
+                Layout[Index] = {
+                    w = Main.Instance.Size.X.Offset,
+                    h = Main.Instance.Size.Y.Offset,
+                    x = Root.Instance.Position.X.Offset,
+                    y = Root.Instance.Position.Y.Offset,
+                }
+            end
+        end
+
+        Config.__ui = {
+            scale = Library.UserScale,
+            key = Library.MenuKeybind and Library.MenuKeybind.Name or nil,
+            windows = Layout,
+        }
+
         Config.__accent = Library.Theme.Accent:ToHex()
         Config.__theme = ThemeColors
         Config.__created = Created or os.date("%d.%m.%Y %H:%M")
@@ -8419,6 +8566,46 @@ local Library = { } do
             if OkColor then Library:SetAccent(Color) end
         end
 
+        if type(Decoded.__ui) == "table" then
+            local UI = Decoded.__ui
+
+            local Scale = tonumber(UI.scale)
+            if Scale then
+                pcall(function() Library:SetUIScale(math.clamp(Scale, 0.5, 1.5)) end)
+                if Library.PaintScale then
+                    pcall(Library.PaintScale, math.floor(Scale * 100 + 0.5))
+                end
+            end
+
+            if type(UI.key) == "string" then
+                local OkKey, Code = pcall(function() return Enum.KeyCode[UI.key] end)
+                if OkKey and Code then
+                    Library.MenuKeybind = Code
+                    if Library.PaintKeybind then pcall(Library.PaintKeybind) end
+                end
+            end
+
+            if type(UI.windows) == "table" then
+                for Index, State in UI.windows do
+                    local Window = Library.Windows[tonumber(Index) or Index]
+                    if type(State) == "table" and Window then
+                        local W, H = tonumber(State.w), tonumber(State.h)
+                        if W and H and Window.SetSize then
+                            pcall(function() Window:SetSize(W, H) end)
+                        end
+
+                        local Root = Window.Items and Window.Items.Root
+                        local X, Y = tonumber(State.x), tonumber(State.y)
+                        if Root and X and Y then
+                            pcall(function()
+                                Root.Instance.Position = UDim2.fromOffset(X, Y)
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+
         Library.Silent = false
         return true
     end
@@ -8457,7 +8644,7 @@ local Library = { } do
         if Library.AutoSaveChanged then pcall(Library.AutoSaveChanged) end
         if not Library.AutoSave then return false end
 
-        return Library:LoadConfigFile(Library.AutoSaveName)
+        return Library:SaveConfigFile(Library.AutoSaveName)
     end
 
     Library.ResumeAutoSave = function(Self)
@@ -8477,6 +8664,56 @@ local Library = { } do
         if Library.AutoSaveChanged then pcall(Library.AutoSaveChanged) end
 
         return Library:LoadConfigFile(Library.AutoSaveName)
+    end
+
+    Library.AutoLoadMarker = function(Self)
+        return Library.Directory .. "/autoload.txt"
+    end
+
+    Library.GetAutoLoad = function(Self)
+        local Name
+
+        pcall(function()
+            local Path = Library:AutoLoadMarker()
+            if isfile and isfile(Path) then Name = readfile(Path) end
+        end)
+
+        if type(Name) ~= "string" then return nil end
+        Name = Name:gsub("%s+$", "")
+        if Name == "" then return nil end
+
+        return Name
+    end
+
+    Library.SetAutoLoad = function(Self, Name)
+        local Want = (type(Name) == "string" and Name ~= "") and Name or nil
+        Library.AutoLoadName = Want
+
+        pcall(function()
+            local Path = Library:AutoLoadMarker()
+
+            if Want then
+                if writefile then writefile(Path, Want) end
+            elseif delfile and isfile and isfile(Path) then
+                delfile(Path)
+            elseif writefile then
+                writefile(Path, "")
+            end
+        end)
+
+        if Library.AutoLoadChanged then pcall(Library.AutoLoadChanged) end
+
+        return Library.AutoLoadName
+    end
+
+    Library.ResumeAutoLoad = function(Self)
+        local Name = Library:GetAutoLoad()
+        if not Name then return false end
+
+        Library.AutoLoadName = Name
+        if Library.AutoLoadChanged then pcall(Library.AutoLoadChanged) end
+
+        return Library:LoadConfigFile(Name)
     end
 
     Library.ListConfigs = function(Self)
