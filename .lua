@@ -1,5 +1,3 @@
---v0.147
-
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
 end
@@ -418,7 +416,8 @@ local Library = { } do
         Text = Color3.fromRGB(255, 255, 255),
         DimText = Color3.fromRGB(120, 120, 120),
         DimIcon = Color3.fromRGB(120, 120, 120),
-        Accent = Color3.fromRGB(179, 165, 255)
+        Accent = Color3.fromRGB(179, 165, 255),
+        Accent2 = Color3.fromRGB(112, 96, 214)
     }
 
     Library.AccentPresets = {
@@ -490,7 +489,151 @@ local Library = { } do
             Text = Color3.fromRGB(245, 234, 238),
             DimText = Color3.fromRGB(132, 110, 118),
             DimIcon = Color3.fromRGB(132, 110, 118),
-            Accent = Color3.fromRGB(240, 118, 150)
+            Accent = Color3.fromRGB(240, 118, 150),
+            Accent2 = Color3.fromRGB(255, 154, 118)
+        }),
+        MakePreset("Midnight", {
+            Background = Color3.fromRGB(12, 14, 24),
+            Section = Color3.fromRGB(16, 19, 32),
+            Element = Color3.fromRGB(21, 25, 41),
+            Light = Color3.fromRGB(28, 33, 54),
+            Hover = Color3.fromRGB(34, 40, 64),
+            Line = Color3.fromRGB(21, 25, 41),
+            Text = Color3.fromRGB(228, 233, 248),
+            DimText = Color3.fromRGB(104, 112, 140),
+            DimIcon = Color3.fromRGB(104, 112, 140),
+            Accent = Color3.fromRGB(108, 122, 255),
+            Accent2 = Color3.fromRGB(186, 96, 255)
+        }),
+        MakePreset("Crimson", {
+            Background = Color3.fromRGB(22, 15, 16),
+            Section = Color3.fromRGB(28, 19, 21),
+            Element = Color3.fromRGB(35, 24, 26),
+            Light = Color3.fromRGB(45, 31, 34),
+            Hover = Color3.fromRGB(53, 37, 41),
+            Line = Color3.fromRGB(35, 24, 26),
+            Text = Color3.fromRGB(246, 234, 234),
+            DimText = Color3.fromRGB(134, 108, 110),
+            DimIcon = Color3.fromRGB(134, 108, 110),
+            Accent = Color3.fromRGB(240, 82, 82),
+            Accent2 = Color3.fromRGB(255, 148, 66)
+        }),
+        MakePreset("Amber", {
+            Background = Color3.fromRGB(24, 19, 12),
+            Section = Color3.fromRGB(30, 24, 16),
+            Element = Color3.fromRGB(38, 30, 21),
+            Light = Color3.fromRGB(49, 39, 27),
+            Hover = Color3.fromRGB(57, 46, 32),
+            Line = Color3.fromRGB(38, 30, 21),
+            Text = Color3.fromRGB(247, 240, 228),
+            DimText = Color3.fromRGB(138, 122, 98),
+            DimIcon = Color3.fromRGB(138, 122, 98),
+            Accent = Color3.fromRGB(255, 176, 46),
+            Accent2 = Color3.fromRGB(255, 226, 120)
+        }),
+        MakePreset("Violet", {
+            Background = Color3.fromRGB(20, 14, 28),
+            Section = Color3.fromRGB(25, 18, 35),
+            Element = Color3.fromRGB(32, 23, 44),
+            Light = Color3.fromRGB(41, 30, 57),
+            Hover = Color3.fromRGB(48, 36, 67),
+            Line = Color3.fromRGB(32, 23, 44),
+            Text = Color3.fromRGB(240, 233, 250),
+            DimText = Color3.fromRGB(124, 108, 146),
+            DimIcon = Color3.fromRGB(124, 108, 146),
+            Accent = Color3.fromRGB(176, 92, 255),
+            Accent2 = Color3.fromRGB(255, 110, 214)
+        }),
+        MakePreset("Slate", {
+            Background = Color3.fromRGB(21, 23, 26),
+            Section = Color3.fromRGB(26, 28, 32),
+            Element = Color3.fromRGB(32, 35, 40),
+            Light = Color3.fromRGB(41, 45, 51),
+            Hover = Color3.fromRGB(48, 53, 60),
+            Line = Color3.fromRGB(32, 35, 40),
+            Text = Color3.fromRGB(233, 237, 242),
+            DimText = Color3.fromRGB(118, 126, 138),
+            DimIcon = Color3.fromRGB(118, 126, 138),
+            Accent = Color3.fromRGB(128, 156, 190),
+            Accent2 = Color3.fromRGB(176, 198, 224)
+        }),
+        MakePreset("Mint", {
+            Background = Color3.fromRGB(13, 22, 21),
+            Section = Color3.fromRGB(17, 28, 27),
+            Element = Color3.fromRGB(22, 35, 34),
+            Light = Color3.fromRGB(29, 45, 44),
+            Hover = Color3.fromRGB(34, 53, 52),
+            Line = Color3.fromRGB(22, 35, 34),
+            Text = Color3.fromRGB(229, 245, 242),
+            DimText = Color3.fromRGB(102, 126, 122),
+            DimIcon = Color3.fromRGB(102, 126, 122),
+            Accent = Color3.fromRGB(64, 224, 190),
+            Accent2 = Color3.fromRGB(128, 246, 200)
+        }),
+        MakePreset("Sunset", {
+            Background = Color3.fromRGB(26, 16, 24),
+            Section = Color3.fromRGB(33, 21, 30),
+            Element = Color3.fromRGB(41, 26, 37),
+            Light = Color3.fromRGB(52, 34, 48),
+            Hover = Color3.fromRGB(61, 40, 56),
+            Line = Color3.fromRGB(41, 26, 37),
+            Text = Color3.fromRGB(248, 234, 244),
+            DimText = Color3.fromRGB(138, 112, 130),
+            DimIcon = Color3.fromRGB(138, 112, 130),
+            Accent = Color3.fromRGB(255, 122, 92),
+            Accent2 = Color3.fromRGB(255, 92, 168)
+        }),
+        MakePreset("Cyber", {
+            Background = Color3.fromRGB(8, 10, 14),
+            Section = Color3.fromRGB(12, 15, 20),
+            Element = Color3.fromRGB(16, 20, 27),
+            Light = Color3.fromRGB(22, 28, 37),
+            Hover = Color3.fromRGB(27, 34, 45),
+            Line = Color3.fromRGB(16, 20, 27),
+            Text = Color3.fromRGB(226, 240, 250),
+            DimText = Color3.fromRGB(96, 112, 130),
+            DimIcon = Color3.fromRGB(96, 112, 130),
+            Accent = Color3.fromRGB(34, 226, 232),
+            Accent2 = Color3.fromRGB(232, 46, 200)
+        }),
+        MakePreset("Mono", {
+            Background = Color3.fromRGB(18, 18, 18),
+            Section = Color3.fromRGB(23, 23, 23),
+            Element = Color3.fromRGB(29, 29, 29),
+            Light = Color3.fromRGB(38, 38, 38),
+            Hover = Color3.fromRGB(45, 45, 45),
+            Line = Color3.fromRGB(29, 29, 29),
+            Text = Color3.fromRGB(245, 245, 245),
+            DimText = Color3.fromRGB(122, 122, 122),
+            DimIcon = Color3.fromRGB(122, 122, 122),
+            Accent = Color3.fromRGB(232, 232, 232),
+            Accent2 = Color3.fromRGB(140, 140, 140)
+        }),
+        MakePreset("Coffee", {
+            Background = Color3.fromRGB(25, 20, 16),
+            Section = Color3.fromRGB(31, 25, 20),
+            Element = Color3.fromRGB(39, 32, 26),
+            Light = Color3.fromRGB(50, 41, 33),
+            Hover = Color3.fromRGB(58, 48, 39),
+            Line = Color3.fromRGB(39, 32, 26),
+            Text = Color3.fromRGB(244, 236, 226),
+            DimText = Color3.fromRGB(136, 120, 104),
+            DimIcon = Color3.fromRGB(136, 120, 104),
+            Accent = Color3.fromRGB(206, 158, 106),
+            Accent2 = Color3.fromRGB(240, 206, 158)
+        }),
+        MakePreset("Ice", {
+            Background = Color3.fromRGB(14, 20, 26),
+            Section = Color3.fromRGB(18, 25, 33),
+            Element = Color3.fromRGB(23, 32, 41),
+            Light = Color3.fromRGB(30, 41, 53),
+            Hover = Color3.fromRGB(36, 48, 62),
+            Line = Color3.fromRGB(23, 32, 41),
+            Text = Color3.fromRGB(232, 242, 250),
+            DimText = Color3.fromRGB(106, 122, 140),
+            DimIcon = Color3.fromRGB(106, 122, 140),
+            Accent = Color3.fromRGB(128, 206, 255),
+            Accent2 = Color3.fromRGB(196, 234, 255)
         })
     }
 
@@ -501,7 +644,8 @@ local Library = { } do
         "Light",
         "Line",
         "Text",
-        "DimText"
+        "DimText",
+        "Accent2"
     }
 
     local function DeriveTheme()
@@ -930,9 +1074,15 @@ local Library = { } do
     end
 
     local function AccentSequence()
+        local Tail = Library.Theme.Accent2
+
+        if typeof(Tail) ~= "Color3" then
+            Tail = Library.Theme.AccentDark
+        end
+
         return ColorSequence.new({
             ColorSequenceKeypoint.new(0, Library.Theme.Accent),
-            ColorSequenceKeypoint.new(1, Library.Theme.AccentDark)
+            ColorSequenceKeypoint.new(1, Tail)
         })
     end
 
@@ -991,6 +1141,10 @@ local Library = { } do
             if Key ~= "Name" and Key ~= "Swatch" and typeof(Value) == "Color3" then
                 Library.Theme[Key] = Value
             end
+        end
+
+        if typeof(Preset.Accent2) ~= "Color3" and typeof(Preset.Accent) == "Color3" then
+            Library.Theme.Accent2 = Preset.Accent:Lerp(Color3.new(0, 0, 0), 0.44)
         end
 
         DeriveTheme()
@@ -7587,7 +7741,7 @@ local Library = { } do
         Items.ThemePanel = MakeFrame({
             Parent = Items.RightScroll.Instance,
             Pos = UDim2.fromOffset(0, 216),
-            Size = UDim2.new(1, 0, 0, 194),
+            Size = UDim2.new(1, 0, 0, 268),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -7595,7 +7749,7 @@ local Library = { } do
 
         Items.SavePanel = MakeFrame({
             Parent = Items.RightScroll.Instance,
-            Pos = UDim2.fromOffset(0, 420),
+            Pos = UDim2.fromOffset(0, 494),
             Size = UDim2.new(1, 0, 0, 142),
             Color = "Section",
             Round = 10,
@@ -7746,15 +7900,29 @@ local Library = { } do
             Z = 4
         })
 
+        local PerRow = 8
+
         for Index, Preset in Library.ThemePresets do
+            local Col = (Index - 1) % PerRow
+            local Row = math.floor((Index - 1) / PerRow)
+
             local Dot = MakeFrame({
                 Parent = Items.ThemePanel.Instance,
-                Anchor = Vector2.new(1, 0),
-                Pos = UDim2.new(1, -14 - (#Library.ThemePresets - Index) * 28, 0, 35),
-                Size = UDim2.fromOffset(18, 18),
+                Pos = UDim2.fromOffset(14 + Col * 26, 58 + Row * 26),
+                Size = UDim2.fromOffset(20, 20),
                 Raw = Preset.Swatch or Preset.Accent,
                 Round = 20,
                 Z = 4
+            })
+
+            Library:Create("UIGradient", {
+                Parent = Dot.Instance,
+                Rotation = 45,
+                Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Preset.Accent),
+                    ColorSequenceKeypoint.new(1, Preset.Accent2
+                        or Preset.Accent:Lerp(Color3.new(0, 0, 0), 0.44))
+                })
             })
 
             Dot.Ring = Library:Create("UIStroke", {
@@ -7788,16 +7956,18 @@ local Library = { } do
             { "Element", "Elements" },
             { "Light", "Boxes" },
             { "Text", "Text" },
-            { "DimText", "Dim text" }
+            { "DimText", "Dim text" },
+            { "Accent2", "Gradient" }
         }
 
         local ThemeCellList = { }
         local CellW = math.floor((ColW - 42) / 2)
+        local CellTop = 58 + math.ceil(#Library.ThemePresets / PerRow) * 26 + 8
 
         for Index, Entry in ThemeCells do
             local Key = Entry[1]
             local CellX = 14 + ((Index - 1) % 2) * (CellW + 14)
-            local CellY = 66 + math.floor((Index - 1) / 2) * 30
+            local CellY = CellTop + math.floor((Index - 1) / 2) * 30
 
             local Label = MakeText({
                 Parent = Items.ThemePanel.Instance,
@@ -7839,7 +8009,7 @@ local Library = { } do
 
             for Index, Cell in ThemeCellList do
                 local CellX = 14 + ((Index - 1) % 2) * (CellW + 14)
-                local CellY = 66 + math.floor((Index - 1) / 2) * 30
+                local CellY = CellTop + math.floor((Index - 1) / 2) * 30
 
                 Cell.Label.Instance.Position = UDim2.fromOffset(CellX, CellY)
                 Cell.Label.Instance.Size = UDim2.fromOffset(CellW - 28, 20)
@@ -8497,7 +8667,10 @@ local Library = { } do
         local ThemeColors = { }
 
         for _, Key in Library.ThemeKeys do
-            ThemeColors[Key] = Library.Theme[Key]:ToHex()
+            local Colour = Library.Theme[Key]
+            if typeof(Colour) == "Color3" then
+                ThemeColors[Key] = Colour:ToHex()
+            end
         end
 
         local Layout = { }
