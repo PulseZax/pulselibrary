@@ -9053,7 +9053,7 @@ local Library = { } do
         if Library.AutoSaveChanged then pcall(Library.AutoSaveChanged) end
         if not Library.AutoSave then return false end
 
-        return Library:SaveConfigFile(Library.AutoSaveName)
+        return Library:SaveConfigFile(Library:AutoSaveTarget())
     end
 
     Library.ResumeAutoSave = function(Self)
@@ -9073,6 +9073,14 @@ local Library = { } do
         if Library.AutoSaveChanged then pcall(Library.AutoSaveChanged) end
 
         return Library:LoadConfigFile(Library.AutoSaveName)
+    end
+
+    Library.AutoSaveTarget = function(Self)
+        if type(Library.AutoLoadName) == "string" and Library.AutoLoadName ~= "" then
+            return Library.AutoLoadName
+        end
+
+        return Library.AutoSaveName
     end
 
     Library.AutoLoadMarker = function(Self)
@@ -9097,6 +9105,7 @@ local Library = { } do
     Library.SetAutoLoad = function(Self, Name)
         local Want = (type(Name) == "string" and Name ~= "") and Name or nil
         Library.AutoLoadName = Want
+        Library.AutoSaveLast = nil
 
         pcall(function()
             local Path = Library:AutoLoadMarker()
@@ -9120,6 +9129,7 @@ local Library = { } do
         if not Name then return false end
 
         Library.AutoLoadName = Name
+        Library.AutoSaveLast = nil
         if Library.AutoLoadChanged then pcall(Library.AutoLoadChanged) end
 
         return Library:LoadConfigFile(Name)
@@ -9152,7 +9162,8 @@ local Library = { } do
                 if Ok and type(Data) == "string" and Data ~= Library.AutoSaveLast then
                     Library.AutoSaveLast = Data
                     pcall(function()
-                        writefile(Library.ConfigFolder .. "/" .. Library.AutoSaveName .. ".json", Data)
+                        writefile(Library.ConfigFolder .. "/"
+                            .. Library:AutoSaveTarget() .. ".json", Data)
                     end)
                 end
             end
