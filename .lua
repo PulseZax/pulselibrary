@@ -403,6 +403,7 @@ local Library = { } do
 
     Library.__index = Library
     Library.Version = "1.1"
+    Library.Invite = nil
     Library.WindowWidth = 716
     Library.WindowHeight = 540
 
@@ -3045,7 +3046,7 @@ local Library = { } do
 
         Items.Username = MakeText({
             Parent = Items.TopBar.Instance,
-            Text = LocalPlayer.DisplayName,
+            Text = Params.Brand or Params.Name or LocalPlayer.DisplayName,
             TextSize = 15,
             Anchor = Vector2.new(1, 0),
             Pos = UDim2.new(1, -90, 0, 8),
@@ -3081,6 +3082,50 @@ local Library = { } do
             Align = Enum.TextXAlignment.Center,
             Z = 4
         })
+
+        local Invite = Params.Invite or Library.Invite
+
+        if type(Invite) == "string" and Invite ~= "" then
+            Items.Invite = MakeText({
+                Parent = Items.TopBar.Instance,
+                Text = Invite,
+                TextSize = 12,
+                Anchor = Vector2.new(1, 0),
+                Pos = UDim2.new(1, -132, 0, 30),
+                Size = UDim2.fromOffset(230, 14),
+                Color = "DimText",
+                Align = Enum.TextXAlignment.Right,
+                Truncate = true,
+                Z = 3
+            })
+
+            Items.InviteHit = MakeButton({
+                Parent = Items.TopBar.Instance,
+                Anchor = Vector2.new(1, 0),
+                Pos = UDim2.new(1, -132, 0, 28),
+                Size = UDim2.fromOffset(math.min(230, #Invite * 7 + 8), 18),
+                Z = 6
+            })
+
+            Items.InviteHit:OnHover(function()
+                Items.Invite:Tween({ TextColor3 = Library.Theme.Accent })
+            end, function()
+                Items.Invite:Tween({ TextColor3 = Library.Theme.DimText })
+            end)
+
+            Items.InviteHit:Connect("MouseButton1Down", function()
+                local Link = Invite
+                if not Link:find("://") then Link = "https://" .. Link end
+
+                if setclipboard then pcall(setclipboard, Link) end
+
+                Library:Notification({
+                    Name = "Invite copied",
+                    Description = Link,
+                    Icon = "share-2"
+                })
+            end)
+        end
 
         local function MakeAvatar(Parent, Props)
             local Avatar = Library:Create("ImageLabel", {
