@@ -667,6 +667,8 @@ local Library = { } do
     Library.ThemingStuff = { }
     Library.ThemeMap = { }
     Library.AccentGradients = { }
+    Library.KeybindList = { }
+    Library.KeybindShown = false
     Library.SurfaceGradients = { }
     Library.SurfaceTilt = 0.34
     Library.Gradients = false
@@ -5369,6 +5371,7 @@ local Library = { } do
             ModeRow(92, "Hold")
 
             local function SaveFlag()
+                if Library.KeybindChanged then pcall(Library.KeybindChanged) end
                 if not Keybind.Flag then return end
 
                 Library.Flags[Keybind.Flag] = {
@@ -5376,6 +5379,12 @@ local Library = { } do
                     Mode = Keybind.Mode
                 }
             end
+
+            table.insert(Library.KeybindList, {
+                Name = Toggle.Name,
+                Bind = Keybind,
+                Owner = Toggle,
+            })
 
             function Keybind:SetMode(Mode, Instant)
                 Keybind.Mode = Mode
@@ -7918,7 +7927,7 @@ local Library = { } do
         Items.SavePanel = MakeFrame({
             Parent = Items.RightScroll.Instance,
             Pos = UDim2.fromOffset(0, 494),
-            Size = UDim2.new(1, 0, 0, 142),
+            Size = UDim2.new(1, 0, 0, 178),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -7973,6 +7982,57 @@ local Library = { } do
             PlaySweep(Items.AutoSweep.Instance)
             Library:SetAutoSave(not Library.AutoSave)
             PaintAutoSave()
+        end)
+
+        MakeText({
+            Parent = Items.SavePanel.Instance,
+            Text = "Show keybinds",
+            TextSize = 15,
+            Pos = UDim2.fromOffset(14, 142),
+            Size = UDim2.new(1, -110, 0, 20),
+            Color = "Text",
+            Z = 4
+        })
+
+        Items.KbBox = MakeFrame({
+            Parent = Items.SavePanel.Instance,
+            Anchor = Vector2.new(1, 0),
+            Pos = UDim2.new(1, -14, 0, 139),
+            Size = UDim2.fromOffset(74, 26),
+            Color = "Element",
+            Round = 6,
+            Clip = true,
+            Z = 4
+        })
+
+        HoverSwap(Items.KbBox)
+        Items.KbSweep = MakeSweep(Items.KbBox.Instance, 5)
+
+        Items.KbText = MakeText({
+            Parent = Items.KbBox.Instance,
+            Text = "off",
+            TextSize = 15,
+            Size = UDim2.new(1, 0, 1, 0),
+            Color = "Text",
+            Align = Enum.TextXAlignment.Center,
+            Z = 6
+        })
+
+        Items.KbHit = MakeButton({
+            Parent = Items.KbBox.Instance,
+            Z = 7
+        })
+
+        local function PaintKb()
+            Items.KbText.Instance.Text = Library.KeybindShown and "on" or "off"
+        end
+
+        PaintKb()
+
+        Items.KbHit:Connect("MouseButton1Down", function()
+            PlaySweep(Items.KbSweep.Instance)
+            Library:ShowKeybinds(not Library.KeybindShown)
+            PaintKb()
         end)
 
         MakeText({
@@ -8628,6 +8688,123 @@ local Library = { } do
         return Config
     end
 
+    Library.KeybindPanel = function(Self, Params)
+        Params = Params or { }
+
+        if Library.KeybindBoard then return Library.KeybindBoard end
+
+        local Board = { Rows = { } }
+
+        Board.Frame = MakeFrame({
+            Parent = Library.Holder.Instance,
+            Anchor = Vector2.new(0, 0),
+            Pos = Params.Pos or UDim2.fromOffset(18, 120),
+            Size = UDim2.fromOffset(210, 40),
+            Color = "Background",
+            Round = 8,
+            Z = 30
+        })
+
+        Board.Frame.Instance.Visible = false
+
+        Library:Create("UIStroke", {
+            Parent = Board.Frame.Instance,
+            Color = Library.Theme.Element,
+            Thickness = 1
+        }):AddToTheme({ Color = "Element" })
+
+        Board.Title = MakeText({
+            Parent = Board.Frame.Instance,
+            Text = Params.Name or "Keybinds",
+            TextSize = 13,
+            Pos = UDim2.fromOffset(12, 8),
+            Size = UDim2.fromOffset(186, 16),
+            Color = "DimText",
+            Z = 31
+        })
+
+        Board.Accent = MakeFrame({
+            Parent = Board.Frame.Instance,
+            Pos = UDim2.fromOffset(0, 0),
+            Size = UDim2.fromOffset(3, 40),
+            Color = "Accent",
+            Round = 3,
+            Z = 31
+        })
+
+        local function row(i)
+            local r = Board.Rows[i]
+            if r then return r end
+
+            r = { }
+
+            r.Key = MakeText({
+                Parent = Board.Frame.Instance,
+                Text = "",
+                TextSize = 13,
+                Pos = UDim2.fromOffset(12, 28 + (i - 1) * 19),
+                Size = UDim2.fromOffset(64, 16),
+                Color = "Accent",
+                Truncate = true,
+                Z = 31
+            })
+
+            r.Name = MakeText({
+                Parent = Board.Frame.Instance,
+                Text = "",
+                TextSize = 13,
+                Pos = UDim2.fromOffset(80, 28 + (i - 1) * 19),
+                Size = UDim2.fromOffset(118, 16),
+                Color = "Text",
+                Truncate = true,
+                Z = 31
+            })
+
+            Board.Rows[i] = r
+            return r
+        end
+
+        function Board:Refresh()
+            local rows = Library:KeybindRows()
+            local shown = 0
+
+            for i, data in ipairs(rows) do
+                shown = i
+                local r = row(i)
+                r.Key.Instance.Text = data.key .. (data.mode == "Hold" and " (hold)" or "")
+                r.Name.Instance.Text = data.name
+                r.Key.Instance.Visible = true
+                r.Name.Instance.Visible = true
+
+                r.Name.Instance.TextTransparency = data.on and 0 or 0.45
+                r.Key.Instance.TextTransparency = data.on and 0 or 0.45
+            end
+
+            for i = shown + 1, #Board.Rows do
+                Board.Rows[i].Key.Instance.Visible = false
+                Board.Rows[i].Name.Instance.Visible = false
+            end
+
+            local tall = shown > 0 and (28 + shown * 19 + 8) or 40
+            Board.Frame.Instance.Size = UDim2.fromOffset(210, tall)
+            Board.Accent.Instance.Size = UDim2.fromOffset(3, tall)
+            Board.Frame.Instance.Visible = Library.KeybindShown and shown > 0
+        end
+
+        Library.KeybindChanged = function() pcall(function() Board:Refresh() end) end
+        Library.KeybindBoard = Board
+
+        Library:Thread(function()
+            while task.wait(0.4) do
+                if not Board.Frame.Instance.Parent then break end
+                Board:Refresh()
+            end
+        end)
+
+        Board:Refresh()
+        return Board
+    end
+
     Library.Watermark = function(Self, Params)
         Params = Params or { }
 
@@ -9133,6 +9310,34 @@ local Library = { } do
         if Library.AutoLoadChanged then pcall(Library.AutoLoadChanged) end
 
         return Library:LoadConfigFile(Name)
+    end
+
+    Library.KeybindRows = function(Self)
+        local rows = { }
+
+        for i = #Library.KeybindList, 1, -1 do
+            local rec = Library.KeybindList[i]
+            local bind = rec.Bind
+
+            if not bind then
+                table.remove(Library.KeybindList, i)
+            elseif bind.Key then
+                table.insert(rows, 1, {
+                    name = rec.Name or "?",
+                    key = KeyName(bind.Key),
+                    mode = bind.Mode or "Toggle",
+                    on = rec.Owner and rec.Owner.Value and true or false,
+                })
+            end
+        end
+
+        return rows
+    end
+
+    Library.ShowKeybinds = function(Self, State)
+        Library.KeybindShown = State and true or false
+        if Library.KeybindChanged then pcall(Library.KeybindChanged) end
+        return Library.KeybindShown
     end
 
     Library.ListConfigs = function(Self)
