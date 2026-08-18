@@ -8790,14 +8790,15 @@ local Library = { } do
         if Library.KeybindBoard then return Library.KeybindBoard end
 
         local Board = { Rows = { } }
+        local RowH, TopH, Pad = 22, 30, 12
 
         Board.Frame = MakeFrame({
             Parent = Library.Holder.Instance,
             Anchor = Vector2.new(0, 0),
             Pos = Params.Pos or UDim2.fromOffset(18, 120),
-            Size = UDim2.fromOffset(210, 40),
-            Color = "Background",
-            Round = 8,
+            Size = UDim2.fromOffset(190, TopH),
+            Color = "Section",
+            Round = 10,
             Z = 30
         })
 
@@ -8812,19 +8813,10 @@ local Library = { } do
         Board.Title = MakeText({
             Parent = Board.Frame.Instance,
             Text = Params.Name or "Keybinds",
-            TextSize = 13,
-            Pos = UDim2.fromOffset(12, 8),
-            Size = UDim2.fromOffset(186, 16),
+            TextSize = 12,
+            Pos = UDim2.fromOffset(Pad, 9),
+            Size = UDim2.fromOffset(150, 14),
             Color = "DimText",
-            Z = 31
-        })
-
-        Board.Accent = MakeFrame({
-            Parent = Board.Frame.Instance,
-            Pos = UDim2.fromOffset(0, 0),
-            Size = UDim2.fromOffset(3, 40),
-            Color = "Accent",
-            Round = 3,
             Z = 31
         })
 
@@ -8833,26 +8825,44 @@ local Library = { } do
             if r then return r end
 
             r = { }
+            local y = TopH + (i - 1) * RowH
+
+            r.Cap = MakeFrame({
+                Parent = Board.Frame.Instance,
+                Pos = UDim2.fromOffset(Pad, y),
+                Size = UDim2.fromOffset(26, 18),
+                Color = "Light",
+                Round = 5,
+                Z = 31
+            })
 
             r.Key = MakeText({
-                Parent = Board.Frame.Instance,
+                Parent = r.Cap.Instance,
                 Text = "",
-                TextSize = 13,
-                Pos = UDim2.fromOffset(12, 28 + (i - 1) * 19),
-                Size = UDim2.fromOffset(64, 16),
+                TextSize = 12,
+                Size = UDim2.new(1, 0, 1, 0),
                 Color = "Accent",
-                Truncate = true,
-                Z = 31
+                Align = Enum.TextXAlignment.Center,
+                Z = 32
             })
 
             r.Name = MakeText({
                 Parent = Board.Frame.Instance,
                 Text = "",
                 TextSize = 13,
-                Pos = UDim2.fromOffset(80, 28 + (i - 1) * 19),
-                Size = UDim2.fromOffset(118, 16),
+                Pos = UDim2.fromOffset(Pad + 34, y + 1),
+                Size = UDim2.fromOffset(300, 16),
                 Color = "Text",
-                Truncate = true,
+                Z = 31
+            })
+
+            r.Dot = MakeFrame({
+                Parent = Board.Frame.Instance,
+                Anchor = Vector2.new(1, 0.5),
+                Pos = UDim2.new(1, -Pad, 0, y + 9),
+                Size = UDim2.fromOffset(5, 5),
+                Color = "Accent",
+                Round = 20,
                 Z = 31
             })
 
@@ -8862,28 +8872,57 @@ local Library = { } do
 
         function Board:Refresh()
             local rows = Library:KeybindRows()
-            local shown = 0
+            local shown, widest = 0, 0
 
             for i, data in ipairs(rows) do
                 shown = i
                 local r = row(i)
-                r.Key.Instance.Text = data.key .. (data.mode == "Hold" and " (hold)" or "")
+                local y = TopH + (i - 1) * RowH
+
+                local cap = data.mode == "Hold" and (data.key .. " ⇣") or data.key
+                local capW = math.clamp(MeasureText(cap, 12, 200, UiFont).X + 14, 26, 76)
+
+                r.Cap.Instance.Position = UDim2.fromOffset(Pad, y)
+                r.Cap.Instance.Size = UDim2.fromOffset(capW, 18)
+                r.Key.Instance.Text = cap
+
+                r.Name.Instance.Position = UDim2.fromOffset(Pad + capW + 8, y + 1)
                 r.Name.Instance.Text = data.name
+
+                local nameW = MeasureText(data.name, 13, 400, UiFont).X
+                widest = math.max(widest, Pad + capW + 8 + nameW + 22 + Pad)
+
+                r.Dot.Instance.Position = UDim2.new(1, -Pad, 0, y + 9)
+                r.Dot.Instance.Visible = data.on
+
+                r.Cap.Instance.Visible = true
                 r.Key.Instance.Visible = true
                 r.Name.Instance.Visible = true
 
-                r.Name.Instance.TextTransparency = data.on and 0 or 0.45
-                r.Key.Instance.TextTransparency = data.on and 0 or 0.45
+                r.Name.Instance.TextTransparency = data.on and 0 or 0.5
+                r.Key.Instance.TextTransparency = data.on and 0 or 0.4
+                r.Cap.Instance.BackgroundTransparency = data.on and 0 or 0.45
             end
 
             for i = shown + 1, #Board.Rows do
-                Board.Rows[i].Key.Instance.Visible = false
-                Board.Rows[i].Name.Instance.Visible = false
+                local r = Board.Rows[i]
+                r.Cap.Instance.Visible = false
+                r.Key.Instance.Visible = false
+                r.Name.Instance.Visible = false
+                r.Dot.Instance.Visible = false
             end
 
-            local tall = shown > 0 and (28 + shown * 19 + 8) or 40
-            Board.Frame.Instance.Size = UDim2.fromOffset(210, tall)
-            Board.Accent.Instance.Size = UDim2.fromOffset(3, tall)
+            local tall = shown > 0 and (TopH + shown * RowH + 6) or TopH
+            local wide = math.clamp(widest, 170, 320)
+
+            Board.Frame.Instance.Size = UDim2.fromOffset(wide, tall)
+            Board.Title.Instance.Size = UDim2.fromOffset(wide - Pad * 2, 14)
+
+            for i = 1, shown do
+                Board.Rows[i].Name.Instance.Size =
+                    UDim2.fromOffset(wide - Board.Rows[i].Name.Instance.Position.X.Offset - 24, 16)
+            end
+
             Board.Frame.Instance.Visible = Library.KeybindShown and shown > 0
         end
 
@@ -8891,7 +8930,7 @@ local Library = { } do
         Library.KeybindBoard = Board
 
         Library:Thread(function()
-            while task.wait(0.4) do
+            while task.wait(0.35) do
                 if not Board.Frame.Instance.Parent then break end
                 Board:Refresh()
             end
