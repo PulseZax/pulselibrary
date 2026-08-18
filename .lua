@@ -1,3 +1,5 @@
+--v0.2
+
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
 end
@@ -22,6 +24,13 @@ local Library = { } do
     local LocalPlayer = Players.LocalPlayer
     local GuiInset = GuiService:GetGuiInset().Y
     local IsMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+
+    local function SmallScreen()
+        local cam = workspace.CurrentCamera
+        if not cam then return IsMobile end
+        local vp = cam.ViewportSize
+        return IsMobile or UserInputService.TouchEnabled or vp.X < 1100 or vp.Y < 700
+    end
 
     local GetHui = gethui or function()
         return cloneref(game:GetService("CoreGui"))
@@ -1660,12 +1669,30 @@ local Library = { } do
 
     local function UpdateScale()
         local Scale = Library.UserScale
+        local cam = workspace.CurrentCamera
 
-        if IsMobile and workspace.CurrentCamera then
-            local Viewport = workspace.CurrentCamera.ViewportSize
-            local FitX = (Viewport.X * 0.94) / Library.WindowWidth
-            local FitY = (Viewport.Y * 0.9) / Library.WindowHeight
-            Scale = Scale * math.clamp(math.min(FitX, FitY), 0.3, 1)
+        if cam then
+            local Viewport = cam.ViewportSize
+            local needW = Library.WindowWidth
+            local needH = Library.WindowHeight
+
+            for _, Window in Library.Windows do
+                local Root = Window.Items and Window.Items.Root
+                if Root then
+                    needW = math.max(needW, Root.Instance.Size.X.Offset)
+                    needH = math.max(needH, Root.Instance.Size.Y.Offset)
+                end
+            end
+
+            local tight = SmallScreen()
+            local padX = tight and 0.9 or 0.96
+            local padY = tight and 0.82 or 0.94
+
+            local Fit = math.min((Viewport.X * padX) / needW, (Viewport.Y * padY) / needH)
+
+            if Fit < 1 then
+                Scale = Scale * math.clamp(Fit, 0.25, 1)
+            end
         end
 
         local Old = Library.UIScale.Instance.Scale
@@ -1687,7 +1714,7 @@ local Library = { } do
         Library.UIScale.Instance.Scale = Scale
         Library.PopupScale.Instance.Scale = Scale
 
-        if IsMobile then
+        if SmallScreen() then
             for _, Window in Library.Windows do
                 if Window.Center then Window:Center() end
             end
@@ -2691,6 +2718,15 @@ local Library = { } do
         local Duration = Params.Duration or 5
 
         local CardW = 300
+
+        do
+            local cam = workspace.CurrentCamera
+            if cam then
+                local room = cam.ViewportSize.X / math.max(Library:GetScreenScale(), 0.01)
+                CardW = math.clamp(math.floor(room * 0.62), 190, 300)
+            end
+        end
+
         local Bounds = Vector2.new(0, 0)
 
         if Content ~= "" then
@@ -3730,6 +3766,7 @@ local Library = { } do
 
         function Window:SetSize(NewW, NewH, Remeasure)
             if Window.Resizing then return end
+            Window.WantsRefit = true
 
             local MinW, MinH, MaxW, MaxH = Window:GetSizeLimits()
 
