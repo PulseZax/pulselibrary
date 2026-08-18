@@ -1,5 +1,3 @@
---v0.2
-
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
 end
@@ -677,6 +675,7 @@ local Library = { } do
     Library.ThemeMap = { }
     Library.AccentGradients = { }
     Library.KeybindList = { }
+    Library.FitLimit = nil
     Library.KeybindShown = false
     Library.SurfaceGradients = { }
     Library.SurfaceTilt = 0.34
@@ -1685,8 +1684,15 @@ local Library = { } do
             end
 
             local tight = SmallScreen()
-            local padX = tight and 0.9 or 0.96
-            local padY = tight and 0.82 or 0.94
+                or (needH / math.max(Viewport.Y, 1)) > 0.62
+                or (needW / math.max(Viewport.X, 1)) > 0.66
+            local padX = tight and 0.78 or 0.9
+            local padY = tight and 0.6 or 0.75
+
+            if Library.FitLimit then
+                padX = math.clamp(Library.FitLimit, 0.3, 1)
+                padY = math.clamp(Library.FitLimit * 0.8, 0.3, 1)
+            end
 
             local Fit = math.min((Viewport.X * padX) / needW, (Viewport.Y * padY) / needH)
 
@@ -7964,7 +7970,7 @@ local Library = { } do
         Items.SavePanel = MakeFrame({
             Parent = Items.RightScroll.Instance,
             Pos = UDim2.fromOffset(0, 494),
-            Size = UDim2.new(1, 0, 0, 178),
+            Size = UDim2.new(1, 0, 0, 214),
             Color = "Section",
             Round = 10,
             Z = 3
@@ -8019,6 +8025,59 @@ local Library = { } do
             PlaySweep(Items.AutoSweep.Instance)
             Library:SetAutoSave(not Library.AutoSave)
             PaintAutoSave()
+        end)
+
+        MakeText({
+            Parent = Items.SavePanel.Instance,
+            Text = "Menu size",
+            TextSize = 15,
+            Pos = UDim2.fromOffset(14, 178),
+            Size = UDim2.new(1, -110, 0, 20),
+            Color = "Text",
+            Z = 4
+        })
+
+        Items.FitBox = MakeFrame({
+            Parent = Items.SavePanel.Instance,
+            Anchor = Vector2.new(1, 0),
+            Pos = UDim2.new(1, -14, 0, 175),
+            Size = UDim2.fromOffset(74, 26),
+            Color = "Element",
+            Round = 6,
+            Clip = true,
+            Z = 4
+        })
+
+        HoverSwap(Items.FitBox)
+        Items.FitSweep = MakeSweep(Items.FitBox.Instance, 5)
+
+        MakeText({
+            Parent = Items.FitBox.Instance,
+            Text = "reset",
+            TextSize = 15,
+            Size = UDim2.new(1, 0, 1, 0),
+            Color = "Text",
+            Align = Enum.TextXAlignment.Center,
+            Z = 6
+        })
+
+        Items.FitHit = MakeButton({
+            Parent = Items.FitBox.Instance,
+            Z = 7
+        })
+
+        Items.FitHit:Connect("MouseButton1Down", function()
+            PlaySweep(Items.FitSweep.Instance)
+
+            for _, W in Library.Windows do
+                if W.SetSize then
+                    pcall(function() W:SetSize(Library.WindowWidth, Library.WindowHeight) end)
+                end
+                if W.Center then pcall(function() W:Center() end) end
+            end
+
+            pcall(function() Library:SetUIScale(1) end)
+            if Library.PaintScale then pcall(Library.PaintScale, 100) end
         end)
 
         MakeText({
