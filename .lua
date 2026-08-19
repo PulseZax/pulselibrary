@@ -1,4 +1,4 @@
---v0.21
+--v0.22
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -1149,6 +1149,13 @@ local Library = { } do
 
         for _, Skin in Library.SurfaceGradients do
             pcall(function() Skin.At.Color = SurfaceSequence(Skin.Strength) end)
+        end
+
+        for _, rec in ipairs(Library.KeybindList) do
+            local owner = rec.Owner
+            if owner and type(owner.Repaint) == "function" then
+                pcall(owner.Repaint)
+            end
         end
 
         for _, Shadow in Library.AccentShadows do
@@ -5168,6 +5175,14 @@ local Library = { } do
                     or CircleKey
             })
 
+            Toggle.Repaint = function()
+                if not Items.Box.Instance.Parent then return end
+                Items.Box.Instance.BackgroundColor3 = Library.Theme[BoxColor]
+                Items.Label.Instance.TextColor3 = Library.Theme[LabelColor]
+                Items.Circle.Instance.BackgroundColor3 =
+                    State and Library:OnAccent() or Library.Theme[CircleKey]
+            end
+
             if Instant then
                 Items.Box.Instance.BackgroundColor3 = Library.Theme[BoxColor]
                 Items.Label.Instance.TextColor3 = Library.Theme[LabelColor]
@@ -8353,7 +8368,7 @@ local Library = { } do
                 if Edge > Bottom then Bottom = Edge end
             end
 
-            Items.RightScroll.Instance.CanvasSize = UDim2.fromOffset(0, Bottom)
+            Items.RightScroll.Instance.CanvasSize = UDim2.fromOffset(0, Bottom + 16)
         end
 
         Items.RightScroll.Instance:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
@@ -8436,6 +8451,14 @@ local Library = { } do
             Items.ThemePanel.Instance.Size = UDim2.new(1, 0, 0, Tall)
             Items.SavePanel.Instance.Position = UDim2.fromOffset(
                 0, Items.ThemePanel.Instance.Position.Y.Offset + Tall + 10)
+
+            local Bottom = 0
+            for _, Frame in { Items.InfoPanel, Items.ThemePanel, Items.SavePanel } do
+                local Edge = Frame.Instance.Position.Y.Offset + Frame.Instance.Size.Y.Offset
+                if Edge > Bottom then Bottom = Edge end
+            end
+
+            Items.RightScroll.Instance.CanvasSize = UDim2.fromOffset(0, Bottom + 16)
         end
 
         local Picker = MakeColorPopup(function()
