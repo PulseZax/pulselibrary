@@ -1,4 +1,4 @@
---v0.22
+--v0.23
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -4072,7 +4072,7 @@ local Library = { } do
             end
         end
 
-        local function RunSearch(Query)
+        local function RunSearch(Query, SkipShow)
             Query = string.lower(Query)
 
             ReturnBorrowed()
@@ -4112,7 +4112,7 @@ local Library = { } do
                 local Tab = Window.Current
                 local Sub = Tab and Tab.Current
 
-                if Sub and Sub.Show then
+                if not SkipShow and Sub and Sub.Show then
                     Sub:Show()
                 end
 
@@ -4191,16 +4191,16 @@ local Library = { } do
         local SearchGuard = 0
         local SearchInfo = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-        local function ResetSearch()
+        local function ResetSearch(SkipShow)
             local Box = Items.SearchBox.Instance
-            if Box.Text == "" then return end
+            if Box.Text == "" and not Window.Searching then return end
 
             Box.Text = ""
             SearchToken += 1
-            RunSearch("")
+            RunSearch("", SkipShow)
         end
 
-        local function SetSearchOpen(Bool)
+        local function SetSearchOpen(Bool, SkipShow)
             if SearchOpen == Bool then return end
             SearchOpen = Bool
 
@@ -4227,7 +4227,15 @@ local Library = { } do
                 Box:ReleaseFocus()
             end
 
-            ResetSearch()
+            ResetSearch(SkipShow)
+        end
+
+        function Window:ClearSearch(SkipShow)
+            if SearchOpen then
+                SetSearchOpen(false, SkipShow)
+            else
+                ResetSearch(SkipShow)
+            end
         end
 
         Items.SearchHit:Connect("MouseButton1Click", function()
@@ -4432,7 +4440,12 @@ local Library = { } do
         end
 
         function Tab:Select()
-            if Window.Current == Tab then return end
+            if Window.Current == Tab then
+                Window:ClearSearch()
+                return
+            end
+
+            Window:ClearSearch(true)
 
             Library:CloseAllPopups()
 
@@ -4737,8 +4750,10 @@ local Library = { } do
                     Section.Items.Frame.Instance.Position = UDim2.fromOffset(0, 26)
 
                     for _, Data in Section.Rows do
-                        Data.Frame:CancelFade()
-                        Data.Frame.Instance.Visible = Data.Visible ~= false
+                        if not Data.Borrowed then
+                            Data.Frame:CancelFade()
+                            Data.Frame.Instance.Visible = Data.Visible ~= false
+                        end
                     end
                 end
             end
@@ -4768,7 +4783,7 @@ local Library = { } do
             Items.Page:HardRestore()
             Items.Page.Instance.Parent = Window.Items.Content.Instance
             Items.Page.Instance.Position = UDim2.fromOffset(0, 0)
-            Items.Page.Instance.Visible = true
+            Items.Page.Instance.Visible = not Window.Searching
 
             Library:SafeCall(SubTab.PageIntro)
 
@@ -4862,11 +4877,16 @@ local Library = { } do
             Items.Page:CancelFade()
             CleanPage()
 
-            Items.Page.Instance.Visible = true
+            Items.Page.Instance.Visible = not Window.Searching
         end
 
         Items.Hit:Connect("MouseButton1Down", function()
-            if Tab.Current == SubTab then return end
+            if Tab.Current == SubTab then
+                Window:ClearSearch()
+                return
+            end
+
+            Window:ClearSearch(true)
 
             Library:CloseAllPopups()
 
@@ -7863,9 +7883,16 @@ local Library = { } do
             Active = true,
             Position = UDim2.new(0.5, 8, 0, 0),
             Size = UDim2.new(0.5, -8, 1, 0),
-            CanvasSize = UDim2.fromOffset(0, 496),
+            CanvasSize = UDim2.fromOffset(0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
             ZIndex = 3,
             BorderSizePixel = 0
+        })
+
+        Library:Create("UIPadding", {
+            Parent = Items.RightScroll.Instance,
+            PaddingBottom = UDim.new(0, 24)
         })
 
         Items.InfoPanel = MakeFrame({
@@ -8361,14 +8388,6 @@ local Library = { } do
         SubTab.OnResize = function()
             LayoutCells(Window.ColW)
 
-            local Bottom = 0
-
-            for _, Frame in { Items.InfoPanel, Items.ThemePanel, Items.SavePanel } do
-                local Edge = Frame.Instance.Position.Y.Offset + Frame.Instance.Size.Y.Offset
-                if Edge > Bottom then Bottom = Edge end
-            end
-
-            Items.RightScroll.Instance.CanvasSize = UDim2.fromOffset(0, Bottom + 16)
         end
 
         Items.RightScroll.Instance:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
@@ -8452,13 +8471,6 @@ local Library = { } do
             Items.SavePanel.Instance.Position = UDim2.fromOffset(
                 0, Items.ThemePanel.Instance.Position.Y.Offset + Tall + 10)
 
-            local Bottom = 0
-            for _, Frame in { Items.InfoPanel, Items.ThemePanel, Items.SavePanel } do
-                local Edge = Frame.Instance.Position.Y.Offset + Frame.Instance.Size.Y.Offset
-                if Edge > Bottom then Bottom = Edge end
-            end
-
-            Items.RightScroll.Instance.CanvasSize = UDim2.fromOffset(0, Bottom + 16)
         end
 
         local Picker = MakeColorPopup(function()
