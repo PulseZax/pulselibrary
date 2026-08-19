@@ -1,4 +1,4 @@
---v0.23
+--v0.24
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -24,6 +24,9 @@ local Library = { } do
     local LocalPlayer = Players.LocalPlayer
     local GuiInset = GuiService:GetGuiInset().Y
     local IsMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+    local IsTouch = UserInputService.TouchEnabled
+    local IsHandheld = IsTouch
+        and (not UserInputService.KeyboardEnabled or UserInputService.AccelerometerEnabled)
 
     local function SmallScreen()
         local cam = workspace.CurrentCamera
@@ -766,7 +769,7 @@ local Library = { } do
         if type(Signal) == "string" and Self.Instance then
             local IsClick = Signal == "MouseButton1Down" or Signal == "MouseButton1Click"
 
-            if IsMobile and IsClick and Self.Instance:IsA("GuiButton") then
+            if IsTouch and IsClick and Self.Instance:IsA("GuiButton") then
                 local LastFire = 0
 
                 local function Fire(Input)
@@ -1562,7 +1565,7 @@ local Library = { } do
             PlaceholderColor3 = "DimText"
         })
 
-        if IsMobile then
+        if IsTouch then
             local Focus = MakeButton({
                 Parent = Params.Parent,
                 Pos = Params.Pos,
@@ -1695,17 +1698,19 @@ local Library = { } do
             local tight = SmallScreen()
                 or (needH / math.max(Viewport.Y, 1)) > 0.62
                 or (needW / math.max(Viewport.X, 1)) > 0.66
-            local padX = tight and 0.78 or 0.9
-            local padY = tight and 0.6 or 0.75
+            local padX = tight and 0.92 or 0.9
+            local padY = tight and 0.88 or 0.75
 
             if Library.FitLimit then
                 padX = math.clamp(Library.FitLimit, 0.3, 1)
-                padY = math.clamp(Library.FitLimit * 0.8, 0.3, 1)
+                padY = math.clamp(Library.FitLimit * 0.94, 0.3, 1)
             end
 
             local Fit = math.min((Viewport.X * padX) / needW, (Viewport.Y * padY) / needH)
 
-            if Fit < 1 then
+            if IsHandheld then
+                Scale = Scale * math.clamp(Fit, 0.3, 2.5)
+            elseif Fit < 1 then
                 Scale = Scale * math.clamp(Fit, 0.25, 1)
             end
         end
@@ -1791,7 +1796,7 @@ local Library = { } do
         end)
 
         Library:Connect(UserInputService.InputEnded, function(Input)
-            if not IsMobile then return end
+            if not IsTouch then return end
             if Input.UserInputType ~= Enum.UserInputType.Touch then return end
             if not TouchStart then return end
 
@@ -2675,6 +2680,10 @@ local Library = { } do
         local Name = string.gsub(Value, "Enum.KeyCode.", "")
         Name = string.gsub(Name, "Enum.UserInputType.", "")
 
+        if Name == "Unknown" or Name == "Touch" or Name == "MouseButton1" then
+            return nil
+        end
+
         local Ok, Key = pcall(function()
             return Enum.KeyCode[Name]
         end)
@@ -2703,12 +2712,17 @@ local Library = { } do
             local IsBack = Input.KeyCode == Enum.KeyCode.Backspace
             local IsEsc = Input.KeyCode == Enum.KeyCode.Escape
 
+            local Mouse = Input.UserInputType == Enum.UserInputType.MouseButton2
+                or Input.UserInputType == Enum.UserInputType.MouseButton3
+
             if IsBack or IsEsc then
                 OnPicked(nil)
             elseif Input.UserInputType == Enum.UserInputType.Keyboard then
-                OnPicked(Input.KeyCode)
-            else
+                OnPicked(Input.KeyCode ~= Enum.KeyCode.Unknown and Input.KeyCode or nil)
+            elseif Mouse then
                 OnPicked(Input.UserInputType)
+            else
+                OnPicked(nil)
             end
 
             task.defer(function()
@@ -2718,6 +2732,10 @@ local Library = { } do
     end
 
     local function KeyMatches(Input, Key)
+        if not Key or Key == Enum.KeyCode.Unknown then return false end
+        if Input.UserInputType == Enum.UserInputType.Touch then return false end
+        if Input.UserInputType == Enum.UserInputType.MouseButton1 then return false end
+
         return Input.KeyCode == Key or Input.UserInputType == Key
     end
 
