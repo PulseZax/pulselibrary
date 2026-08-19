@@ -1,5 +1,3 @@
---v0.24
-
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
 end
