@@ -1,3 +1,6 @@
+--v0.26
+
+
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
 end
@@ -1774,6 +1777,22 @@ local Library = { } do
         UpdateScale()
     end)
 
+    local function OnScreen(Object)
+        local Node = Object
+        local Stop = Library.Holder and Library.Holder.Instance
+        local Popup = Library.PopupHolder and Library.PopupHolder.Instance
+
+        while Node do
+            if Node == Stop or Node == Popup then return true end
+            if Node:IsA("ScreenGui") then return Node.Enabled end
+            if Node:IsA("GuiObject") and not Node.Visible then return false end
+
+            Node = Node.Parent
+        end
+
+        return false
+    end
+
     local function PointInside(Position, Object)
         local Corner = Object.AbsolutePosition
         local Size = Object.AbsoluteSize
@@ -1817,7 +1836,9 @@ local Library = { } do
 
             for _, Data in Library.TouchButtons do
                 local Object = Data.Instance
-                if not Object or not Object.Visible then continue end
+                if not Object or not Object.Parent then continue end
+                if not Object.Visible or not OnScreen(Object) then continue end
+                if Object.AbsoluteSize.X <= 0 or Object.AbsoluteSize.Y <= 0 then continue end
                 if not PointInside(Position, Object) then continue end
                 if Object.ZIndex < ShieldLevel then continue end
 
