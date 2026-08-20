@@ -1,5 +1,4 @@
---v0.26
-
+--v0.27
 
 if getgenv().PulseLib and getgenv().PulseLib.Unload then
     getgenv().PulseLib:Unload()
@@ -1367,6 +1366,8 @@ local Library = { } do
     end
 
     Library.Unload = function(Self)
+        Library.Unloaded = true
+
         if Library.OnUnload then
             local Handler = Library.OnUnload
             Library.OnUnload = nil
@@ -1387,7 +1388,9 @@ local Library = { } do
             if Root then Root.Instance:Destroy() end
         end
 
-        getgenv().PulseLib = nil
+        if getgenv().PulseLib == Library then
+            getgenv().PulseLib = nil
+        end
     end
 
     Library.Holder = Library:Create("ScreenGui", {
@@ -2572,7 +2575,13 @@ local Library = { } do
             end
 
             if type(Color) == "string" then
-                Color = Color3.fromHex(Color)
+                local Parsed
+                pcall(function() Parsed = Color3.fromHex(Color) end)
+                Color = Parsed
+            end
+
+            if typeof(Color) ~= "Color3" then
+                Color = Picker.Color or Library.Theme.Accent or Color3.new(1, 1, 1)
             end
 
             Picker.Hue, Picker.Saturation, Picker.Value = Color:ToHSV()
@@ -3978,6 +3987,78 @@ local Library = { } do
             end
         end)
 
+        if IsTouch then
+            local Puck = MakeFrame({
+                Parent = Library.Holder.Instance,
+                Pos = UDim2.fromOffset(16, 120),
+                Size = UDim2.fromOffset(46, 46),
+                Color = "Background",
+                Round = 23,
+                Z = 60
+            })
+
+            Library:Create("UIStroke", {
+                Parent = Puck.Instance,
+                Color = Library.Theme.Accent,
+                Thickness = 1.5
+            }):AddToTheme({ Color = "Accent" })
+
+            MakeImage({
+                Parent = Puck.Instance,
+                Icon = Library.Logo or "layers",
+                Pos = UDim2.fromOffset(11, 11),
+                Size = UDim2.fromOffset(24, 24),
+                Color = "Accent",
+                Z = 61
+            })
+
+            local PuckHit = MakeButton({ Parent = Puck.Instance, Z = 62 })
+
+            local Moved, Origin = false, nil
+
+            PuckHit:Connect("InputBegan", function(Input)
+                if Input.UserInputType ~= Enum.UserInputType.Touch
+                    and Input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+
+                Moved = false
+                Origin = Input.Position
+            end)
+
+            Library:Connect(UserInputService.InputChanged, function(Input)
+                if not Origin then return end
+                if Input.UserInputType ~= Enum.UserInputType.Touch
+                    and Input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+                local Delta = Input.Position - Origin
+                if math.abs(Delta.X) > 8 or math.abs(Delta.Y) > 8 then Moved = true end
+
+                if not Moved then return end
+
+                local Scale = math.max(Library:GetScreenScale(), 0.01)
+                local Cam = workspace.CurrentCamera
+                local Room = Cam and Cam.ViewportSize or Vector2.new(1920, 1080)
+
+                Puck.Instance.Position = UDim2.fromOffset(
+                    math.clamp((Input.Position.X - 23 * Scale) / Scale, 0, Room.X / Scale - 46),
+                    math.clamp((Input.Position.Y - GuiInset - 23 * Scale) / Scale, 0, Room.Y / Scale - 46)
+                )
+            end)
+
+            Library:Connect(UserInputService.InputEnded, function(Input)
+                if not Origin then return end
+                if Input.UserInputType ~= Enum.UserInputType.Touch
+                    and Input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+
+                if not Moved then
+                    Window:SetOpen(not Window.IsOpen)
+                end
+
+                Origin = nil
+            end)
+
+            Window.Puck = Puck
+        end
+
         Items.SearchResults = Library:Create("ScrollingFrame", {
             Parent = Items.Content.Instance,
             Name = "\0",
@@ -4516,6 +4597,7 @@ local Library = { } do
             Items.SubRow.Instance.Visible = true
 
             task.defer(function()
+                if Library.Unloaded then return end
                 EnterFirstSub()
                 Window:LayoutSubBar()
             end)
@@ -4808,6 +4890,8 @@ local Library = { } do
         end
 
         function SubTab:Show()
+            if Library.Unloaded then return end
+
             SubTab.ShowToken += 1
 
             local Token = SubTab.ShowToken
@@ -4818,7 +4902,12 @@ local Library = { } do
 
             Items.Page:CancelFade()
             Items.Page:HardRestore()
-            Items.Page.Instance.Parent = Window.Items.Content.Instance
+            local Reparented = pcall(function()
+                Items.Page.Instance.Parent = Window.Items.Content.Instance
+            end)
+
+            if not Reparented then return end
+
             Items.Page.Instance.Position = UDim2.fromOffset(0, 0)
             Items.Page.Instance.Visible = not Window.Searching
 
@@ -5849,6 +5938,9 @@ local Library = { } do
         Items.Knob = MakeKnob(Items.Track.Instance)
 
         function Slider:Set(Value, Instant)
+            Value = tonumber(Value)
+            if not Value or Value ~= Value then Value = Slider.Value or Slider.Min end
+
             local Clamped = math.clamp(Value, Slider.Min, Slider.Max)
             Slider.Value = Library:Round(Clamped, Slider.Decimals)
 
@@ -5947,6 +6039,11 @@ local Library = { } do
             if type(MinValue) == "table" then
                 MinValue, MaxValue = MinValue[1], MinValue[2]
             end
+
+            MinValue = tonumber(MinValue)
+            MaxValue = tonumber(MaxValue)
+            if MinValue ~= MinValue then MinValue = nil end
+            if MaxValue ~= MaxValue then MaxValue = nil end
 
             MinValue = math.clamp(MinValue or Slider.Min, Slider.Min, Slider.Max)
             MaxValue = math.clamp(MaxValue or Slider.Max, Slider.Min, Slider.Max)
@@ -9335,11 +9432,13 @@ local Library = { } do
             local SetFunction = Library.SetFlags[Index]
             if not SetFunction then continue end
 
-            if type(Value) == "table" and Value.__color then
-                SetFunction(Color3.fromHex(Value.__color), Value.__alpha)
-            else
-                SetFunction(Value)
-            end
+            pcall(function()
+                if type(Value) == "table" and Value.__color then
+                    SetFunction(Color3.fromHex(Value.__color), Value.__alpha)
+                else
+                    SetFunction(Value)
+                end
+            end)
         end
 
         if type(Decoded.__theme) == "table" then
