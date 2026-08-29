@@ -1,4 +1,4 @@
---v1.0
+--122
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -9262,15 +9262,19 @@ function Window.new(library, config)
     self.headerLine = headerLine
 
     local titleX = 16
+    self.IconSize = math.clamp(Util.num(config.IconSize, 28), 14, 44)
+    self.iconSlot = P.frame({
+        Name = "Icon",
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(0, 15, 0.5, 0),
+        Size = UDim2.fromOffset(self.IconSize, self.IconSize),
+        BackgroundTransparency = 1,
+        Visible = false,
+        Parent = self.header,
+    })
     if config.Icon then
-        local glyph, bindings = Icons.create(config.Icon, { size = 15, token = "Accent" })
-        if glyph then
-            glyph.AnchorPoint = Vector2.new(0, 0.5)
-            glyph.Position = UDim2.new(0, 16, 0.5, 0)
-            glyph.Parent = self.header
-            self.maid:AddAll(bindings)
-            titleX = 40
-        end
+        self:SetIcon(config.Icon)
+        titleX = 15 + self.IconSize + 11
     end
 
     self.LogoStyle = config.Logo == true or config.TitleStyle == "logo"
@@ -9959,7 +9963,7 @@ function Window:_placeDock()
 end
 
 function Window:_showDock(root, animate)
-    local wanted = root ~= nil and #root.subs > 0
+    local wanted = root ~= nil and #root.subs > 0 and not self.Minimised and not self.loader
     for _, tab in ipairs(self.tabs) do
         if tab.subContainer then
             tab.subContainer.Visible = wanted and tab == root
@@ -10171,8 +10175,6 @@ function Window:SelectTab(target)
         easing = Enum.EasingStyle.Quint,
     })
 
-    self._railWidth = nil
-    self:_layoutRail(previous ~= nil)
     target:Repaint()
     if target.parent then
         target.parent:Repaint()
@@ -10181,6 +10183,52 @@ function Window:SelectTab(target)
     self:_moveMarker(target, previous ~= nil)
     self.pages:ScrollToTop()
     self.TabChanged:Fire(target, previous)
+    return self
+end
+
+function Window:SetTabOrder(names)
+    if type(names) ~= "table" then
+        Log.warn("window", "SetTabOrder expects a list of names")
+        return self
+    end
+
+    local rank = {}
+    for index, name in ipairs(names) do
+        rank[Util.normalise(name)] = index
+    end
+
+    local function rankOf(tab)
+        local key = Util.normalise(tab.Name)
+        local exact = rank[key]
+        if exact then
+            return exact
+        end
+        for listed, index in pairs(rank) do
+            if #listed > 0 and string.sub(key, 1, #listed) == listed then
+                return index
+            end
+        end
+        return nil
+    end
+
+    local tail = #names
+    for _, tab in ipairs(self.tabs) do
+        if not tab.parent and tab.button then
+            local at = rankOf(tab)
+            if at then
+                tab.button.LayoutOrder = at
+            else
+                tail += 1
+                tab.button.LayoutOrder = tail
+            end
+        end
+    end
+
+    task.defer(function()
+        if not self.Destroyed then
+            self:_moveMarker(self.activeTab, false)
+        end
+    end)
     return self
 end
 
@@ -10241,6 +10289,12 @@ function Window:SetMinimised(state)
         self.restoreSize = self.root.Size
         self.body.Visible = false
         self.footer.Visible = false
+        if self.resizer then
+            self.resizer.Visible = false
+        end
+        if self.dock then
+            self.dock.Visible = false
+        end
         Motion.play(self.root, { Size = UDim2.new(self.root.Size.X.Scale, self.root.Size.X.Offset, 0, headerHeight) }, {
             duration = Motion.Duration.Base,
         })
@@ -10248,13 +10302,189 @@ function Window:SetMinimised(state)
         Motion.play(self.root, { Size = self.restoreSize or UDim2.fromOffset(716, 468) }, {
             duration = Motion.Duration.Base,
             onDone = function()
-                if not self.Destroyed then
-                    self.body.Visible = true
-                    self.footer.Visible = true
+                if self.Destroyed then
+                    return
                 end
+                self.body.Visible = true
+                self.footer.Visible = true
+                if self.resizer then
+                    self.resizer.Visible = self.Resizable
+                end
+                self:_showDock(self.activeTab and self.activeTab:Root() or nil, false)
+                self:_placeDock()
             end,
         })
     end
+    return self
+end
+
+function Window:SetLoading(state, text)
+    local wanted = state == true
+
+    if not wanted then
+        if not self.loader then
+            return self
+        end
+        local veil = self.loader
+        self.loader = nil
+        if self.loaderTick then
+            self.loaderTick:Disconnect()
+            self.loaderTick = nil
+        end
+        Motion.play(veil, { GroupTransparency = 1 }, {
+            duration = Motion.Duration.Slow,
+            easing = Enum.EasingStyle.Sine,
+            onDone = function()
+                veil:Destroy()
+                if not self.Destroyed then
+                    self:_showDock(self.activeTab and self.activeTab:Root() or nil, true)
+                end
+            end,
+        })
+        return self
+    end
+
+    if self.loader then
+        if text and self.loaderLabel then
+            self.loaderLabel.Text = Util.str(text, self.loaderLabel.Text)
+        end
+        return self
+    end
+
+    local veil = P.canvas({
+        Name = "Loader",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 0,
+        ZIndex = 40,
+        Parent = self.body,
+    })
+    self.maid:Add(veil)
+    self.maid:Add(Theme.bind(veil, "BackgroundColor3", "Background"))
+    self.loader = veil
+    if self.dock then
+        self.dock.Visible = false
+    end
+
+    local washes = {}
+    local WASH = {
+        {
+            tokens = { "Accent", "Info", "Accent" },
+            band = { { 0, 1 }, { 0.24, 0.92 }, { 0.5, 0.79 }, { 0.76, 0.92 }, { 1, 1 } },
+            spin = 9,
+        },
+        {
+            tokens = { "Info", "Accent", "Info" },
+            band = { { 0, 1 }, { 0.36, 0.93 }, { 0.64, 0.85 }, { 1, 1 } },
+            spin = -6,
+            tilt = 40,
+        },
+    }
+    for index, spec in ipairs(WASH) do
+        local frame = P.frame({
+            Name = "Wash" .. index,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromScale(1.8, 1.8),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BackgroundTransparency = 0,
+            Parent = veil,
+        })
+        local points = {}
+        for _, entry in ipairs(spec.band) do
+            table.insert(points, NumberSequenceKeypoint.new(entry[1], entry[2]))
+        end
+        local gradient = Util.new("UIGradient", {
+            Transparency = NumberSequence.new(points),
+            Rotation = spec.tilt or 0,
+            Parent = frame,
+        })
+        local function repaint()
+            local stops = {}
+            for at, token in ipairs(spec.tokens) do
+                table.insert(stops, ColorSequenceKeypoint.new(
+                    (at - 1) / (#spec.tokens - 1), Theme.color(token)))
+            end
+            gradient.Color = ColorSequence.new(stops)
+        end
+        repaint()
+        self.maid:Add(Theme.Changed:Connect(repaint))
+        washes[index] = { gradient = gradient, spin = spec.spin, tilt = spec.tilt or 0 }
+    end
+
+    local ring = P.frame({
+        Name = "Ring",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, -14),
+        Size = UDim2.fromOffset(34, 34),
+        BackgroundTransparency = 1,
+        Parent = veil,
+    })
+    Util.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ring })
+
+    local track = Util.new("UIStroke", {
+        Thickness = 3,
+        Transparency = 0.86,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = ring,
+    })
+    self.maid:Add(Theme.bind(track, "Color", "Faint"))
+
+    local sweep = P.frame({
+        Name = "Sweep",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Parent = ring,
+    })
+    Util.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = sweep })
+    local arc = Util.new("UIStroke", {
+        Thickness = 3,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = sweep,
+    })
+    self.maid:Add(Theme.bind(arc, "Color", "Accent"))
+    local spin = Util.new("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.42, 1),
+            NumberSequenceKeypoint.new(0.72, 0.1),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Parent = arc,
+    })
+
+    self.loaderLabel = P.text({
+        Name = "Caption",
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 16),
+        Size = UDim2.new(1, -40, 0, 16),
+        Text = Util.str(text, "Loading"),
+        TextSize = P.Size.Small,
+        FontFace = P.Font.Medium,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = veil,
+    })
+    self.maid:Add(Theme.bind(self.loaderLabel, "TextColor3", "Muted"))
+
+    veil.GroupTransparency = 1
+    Motion.play(veil, { GroupTransparency = 0 }, {
+        duration = Motion.Duration.Base,
+        easing = Enum.EasingStyle.Sine,
+    })
+
+    local clock = 0
+    self.loaderTick = RunService.Heartbeat:Connect(function(delta)
+        if self.Destroyed or not veil.Parent then
+            return
+        end
+        clock += math.min(delta, 0.1)
+        spin.Rotation = (clock * 260) % 360
+        for _, wash in ipairs(washes) do
+            wash.gradient.Rotation = (wash.tilt + clock * wash.spin) % 360
+        end
+    end)
+
     return self
 end
 
@@ -10317,6 +10547,60 @@ end
 function Window:SetHintMode(mode)
     self.HintMode = mode == "keybind" and "keybind" or "size"
     self:_updateHint()
+    return self
+end
+
+function Window:SetIconSize(size)
+    self.IconSize = math.clamp(Util.num(size, 28), 14, 44)
+    if self.iconSlot then
+        self.iconSlot.Size = UDim2.fromOffset(self.IconSize, self.IconSize)
+        if self.Icon then
+            self:SetIcon(self.Icon)
+        end
+    end
+    return self
+end
+
+function Window:SetIcon(name)
+    if not self.iconSlot then
+        return self
+    end
+    if self.iconBindings then
+        for _, binding in ipairs(self.iconBindings) do
+            Theme.unbind(binding)
+        end
+    end
+    self.iconBindings = nil
+    for _, child in ipairs(self.iconSlot:GetChildren()) do
+        child:Destroy()
+    end
+
+    if name == nil or name == false or name == "" then
+        self.iconSlot.Visible = false
+        return self
+    end
+
+    local box = self.IconSize or 28
+    local glyph, bindings = Icons.create(name, { size = math.floor(box * 0.72), token = "Accent" })
+    if not glyph then
+        self.iconSlot.Visible = false
+        return self
+    end
+
+    glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+    glyph.Position = UDim2.fromScale(0.5, 0.5)
+    glyph.Parent = self.iconSlot
+    if glyph:IsA("ImageLabel") then
+        glyph.Size = UDim2.fromScale(1, 1)
+        glyph.ScaleType = Enum.ScaleType.Crop
+        P.corner(glyph, math.max(4, math.floor(box * 0.28)))
+        local _, stroke = P.stroke(glyph, "Border", 1, Theme.number("BorderT", 0.9) - 0.2)
+        self.maid:Add(stroke)
+    end
+    self.iconBindings = bindings
+    self.maid:AddAll(bindings)
+    self.iconSlot.Visible = true
+    self.Icon = name
     return self
 end
 
