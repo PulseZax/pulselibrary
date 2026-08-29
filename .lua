@@ -1,8 +1,4 @@
---[[
-    Slate UI
-    A minimal interface framework for Roblox executor environments.
-    Generated bundle - edit the files in src/ and run build.py instead.
-]]
+--v1.0
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -982,6 +978,7 @@ Input.PointerMoved = Signal.new()
 local layers = {}
 local hotkeys = {}
 local captureHandler = nil
+local pendingModifier = nil
 local connections = {}
 
 local POINTER_TYPES = {
@@ -1058,11 +1055,13 @@ function Input.layerCount()
 end
 
 function Input.capture(handler)
+    pendingModifier = nil
     captureHandler = handler
 end
 
 function Input.cancelCapture(handler)
     if handler == nil or captureHandler == handler then
+        pendingModifier = nil
         captureHandler = nil
     end
 end
@@ -1117,9 +1116,12 @@ end
 table.insert(connections, UserInputService.InputBegan:Connect(function(input, processed)
     if captureHandler then
         local handler = captureHandler
+        -- a modifier only becomes the bind when it is released on its own
         if input.UserInputType == Enum.UserInputType.Keyboard and Input.isModifier(input.KeyCode) then
+            pendingModifier = input
             return
         end
+        pendingModifier = nil
         captureHandler = nil
         task.spawn(handler, input)
         return
@@ -1155,6 +1157,15 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, pr
 end))
 
 table.insert(connections, UserInputService.InputEnded:Connect(function(input)
+    if captureHandler and pendingModifier and input.UserInputType == Enum.UserInputType.Keyboard
+        and input.KeyCode == pendingModifier.KeyCode then
+        local handler = captureHandler
+        local held = pendingModifier
+        pendingModifier = nil
+        captureHandler = nil
+        task.spawn(handler, held)
+        return
+    end
     if POINTER_TYPES[input.UserInputType] then
         Input.PointerUp:Fire(normalise(input), input)
     elseif input.UserInputType == Enum.UserInputType.Keyboard then
@@ -5951,7 +5962,8 @@ return Base.define({
                 if input.KeyCode == Enum.KeyCode.Backspace or input.KeyCode == Enum.KeyCode.Delete then
                     self.Value = { Key = nil, Modifiers = {} }
                 else
-                    self.Value = { Key = input.KeyCode, Modifiers = Input.modifiers() }
+                    local held = Input.isModifier(input.KeyCode) and {} or Input.modifiers()
+                    self.Value = { Key = input.KeyCode, Modifiers = held }
                 end
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2
